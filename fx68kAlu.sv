@@ -817,6 +817,7 @@ module ccrTable(
 			`ALU_ROW_07:	ccrMask = KNZ00;		// MUL (originally KNZ0A)
 			`ALU_ROW_09,
 			`ALU_ROW_10:	ccrMask = KNZ00;		// RO[lr] (originally KNZ0A)
+			`ALU_ROW_08,							// ROXR (originally ANZ0A)
 			`ALU_ROW_11:	ccrMask = CUPDALL;		// ROXL (originally ANZ0A)
 			default:	ccrMask = CUNUSED;
 			endcase
