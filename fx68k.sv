@@ -138,6 +138,7 @@ module fx68k(
 
 	output eRWn, output ASn, output LDSn, output UDSn,
 	output logic E, output VMAn,	
+	output E_falling, E_rising,
 	output FC0, output FC1, output FC2,
 	output BGn,
 	output oRESETn, output oHALTEDn,
@@ -460,6 +461,10 @@ module fx68k(
 	
 	// Internal stop just one cycle before E falling edge
 	wire xVma = ~rVma & (eCntr == 8);
+
+	// clock enables for the E clock
+	assign E_falling = Clks.enPhi2 && eCntr == 9;
+	assign E_rising  = Clks.enPhi2 && eCntr == 5;
 	
 	always_ff @( posedge Clks.clk) begin
 		if( Clks.pwrUp) begin
