@@ -11,22 +11,36 @@
 
 localparam MASK_NBITS = 5;
 
-localparam
-        OP_AND = 1,
-        OP_SUB = 2, OP_SUBX = 3, OP_ADD = 4,
-        OP_EXT = 5, OP_SBCD = 6, OP_SUB0 = 7,
-        OP_OR = 8, OP_EOR = 9,
-        OP_SUBC = 10, OP_ADDC = 11, OP_ADDX = 12,
-        OP_ASL = 13,
-        OP_ASR = 14,
-        OP_LSL = 15,
-        OP_LSR = 16,
-        OP_ROL = 17,
-        OP_ROR = 18,
-        OP_ROXL = 19,
-        OP_ROXR = 20,
-        OP_SLAA = 21,
-        OP_ABCD = 22;
+localparam [4:0]
+    // 5'b000xx : BCD
+    OP_0    = 5'd0, // Not used
+    OP_1    = 5'd1, // Not used
+    OP_ABCD = 5'd2,
+    OP_SBCD = 5'd3,
+    // 5'b001xx : Logic
+    OP_OR   = 5'd4,
+    OP_EOR  = 5'd5,
+    OP_AND  = 5'd6,
+    OP_EXT  = 5'd7,
+    // 5'b01xxx : Adder
+    OP_ADD0 = 5'd8, // Not used
+    OP_SUB0 = 5'd9,
+    OP_ADD  = 5'd10,
+    OP_SUB  = 5'd11,
+    OP_ADDC = 5'd12,
+    OP_SUBC = 5'd13,
+    OP_ADDX = 5'd14,
+    OP_SUBX = 5'd15,
+    // 5'b1xxxx : Shifter
+    OP_ASL  = 5'd16,
+    OP_ASR  = 5'd17,
+    OP_LSL  = 5'd18,
+    OP_LSR  = 5'd19,
+    OP_ROL  = 5'd20,
+    OP_ROR  = 5'd21,
+    OP_ROXL = 5'd22,
+    OP_ROXR = 5'd23,
+    OP_SLAA = 5'd24;
 
 module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
     input [15:0] ird,
@@ -121,6 +135,7 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
 
     // Register some decoded signals
     always_ff @( posedge clk) begin
+    
         if (enT3) begin
             row     <= cRow;
             isArX   <= cIsArX;
@@ -168,9 +183,16 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
 
     wire [7:0] bcdResult;
     wire bcdC, bcdV;
-    aluCorf aluCorf( .binResult( aluLatch[7:0]), .hCarry( coreH),
-        .bAdd( (oper != OP_SBCD) ), .cin( pswCcr[ XF]),
-        .bcdResult( bcdResult), .dC( bcdC), .ov( bcdV));
+    aluCorf aluCorf
+    (
+        .binResult (aluLatch[7:0]),
+        .hCarry    (coreH),
+        .bAdd      (~oper[0]),
+        .cin       (pswCcr[XF]),
+        .bcdResult (bcdResult),
+        .dC        (bcdC),
+        .ov        (bcdV)
+    );
 
     // BCD adjust is among the slowest processing on ALU !
     // Precompute and register BCD result on T1
@@ -185,41 +207,37 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
     end
 
     // Adder carry in selector
-    always_comb
-    begin
-        case( oper)
-            OP_ADD, OP_SUB:   addCin = 1'b0;
-            OP_SUB0:          addCin = 1'b1;            // NOT = 0 - op - 1
-            OP_ADDC,OP_SUBC:  addCin = ccrCore[ CF];
-            OP_ADDX,OP_SUBX:  addCin = pswCcr[ XF];
-            default: addCin = 1'bX;
+    always_comb begin
+        case (oper[2:0])
+            OP_ADD0[2:0], OP_SUB0[2:0]: addCin = 1'b1;            // NOT = 0 - op - 1
+            OP_ADD[2:0],  OP_SUB[2:0]:  addCin = 1'b0;
+            OP_ADDC[2:0], OP_SUBC[2:0]: addCin = ccrCore[CF];
+            OP_ADDX[2:0], OP_SUBX[2:0]: addCin = pswCcr[XF];
         endcase
     end
 
     // Shifter carry in and direction selector
     always_comb begin
-        case( oper)
-        OP_LSL, OP_ASL, OP_ROL, OP_ROXL, OP_SLAA:   shftRight = 1'b0;
-        OP_LSR, OP_ASR, OP_ROR, OP_ROXR:            shftRight = 1'b1;
-        default:                                    shftRight = 1'bX;
-        endcase
+        shftRight = oper[0];
 
-        case( oper)
-        OP_LSR,
-        OP_ASL,
-        OP_LSL:     shftCin = 1'b0;
-        OP_ROL,
-        OP_ASR:     shftCin = shftMsb;
-        OP_ROR:     shftCin = aOperand[0];
-        OP_ROXL,
-        OP_ROXR:
-            if( shftIsMul)
-                shftCin = rIrd8 ? pswCcr[NF] ^ pswCcr[VF] : pswCcr[ CF];
-            else
-                shftCin = pswCcr[ XF];
-
-        OP_SLAA:    shftCin = aluColumn[1];   // col4 -> 0, col 6-> 1
-        default:    shftCin = 'X;
+        case (oper[3:0])
+            OP_LSR[3:0],
+            OP_ASL[3:0],
+            OP_LSL[3:0]:
+                shftCin = 1'b0;
+            OP_ROL[3:0],
+            OP_ASR[3:0]:
+                shftCin = shftMsb;
+            OP_ROR[3:0]:
+                shftCin = aOperand[0];
+            OP_ROXL[3:0],
+            OP_ROXR[3:0]:
+                if (shftIsMul)
+                    shftCin = rIrd8 ? pswCcr[NF] ^ pswCcr[VF] : pswCcr[ CF];
+                else
+                    shftCin = pswCcr[ XF];
+            default: // OP_SLAA
+                shftCin = aluColumn[1];   // col4 -> 0, col 6-> 1
         endcase
     end
 
@@ -227,40 +245,50 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
     always_comb begin
 
         // sub is DATA - ADDR
-        mySubber( aOperand, dOperand, addCin,
-            (oper == OP_ADD) | (oper == OP_ADDC) | (oper == OP_ADDX),
+        mySubber( aOperand, dOperand, addCin, ~oper[0],
             isByte, subResult, subCout, subOv);
 
-        isShift = 1'b0;
-        case( oper)
-        OP_AND: result = aOperand & dOperand;
-        OP_OR:  result = aOperand | dOperand;
-        OP_EOR: result = aOperand ^ dOperand;
+        isShift = oper[4];
+        
+        case (oper)
+            OP_0, // not used
+            OP_1, // not used
+            OP_ABCD,
+            OP_SBCD:
+            begin
+                result = { 8'h00, bcdLatch };
+            end
+            
+            OP_OR:  result = aOperand | dOperand;
+            OP_EOR: result = aOperand ^ dOperand;
+            OP_AND: result = aOperand & dOperand;
+            OP_EXT: result = { {8{aOperand[7]}}, aOperand[7:0] };
 
-        OP_EXT: result = { {8{aOperand[7]}}, aOperand[7:0]};
-
-        OP_SLAA,
-        OP_ASL, OP_ASR,
-        OP_LSL, OP_LSR,
-        OP_ROL, OP_ROR,
-        OP_ROXL, OP_ROXR:
+            OP_ADD0, // Not used
+            OP_SUB0,
+            OP_ADD,
+            OP_SUB,
+            OP_ADDC,
+            OP_SUBC,
+            OP_ADDX,
+            OP_SUBX:
+            begin
+                result = subResult;
+            end
+            
+            //OP_ASL,
+            //OP_ASR,
+            //OP_LSL,
+            //OP_LSR,
+            //OP_ROL,
+            //OP_ROR,
+            //OP_ROXL,
+            //OP_ROXR,
+            //OP_SLAA:
+            default:
             begin
                 result = shftResult[15:0];
-                isShift = 1'b1;
             end
-
-        OP_ADD,
-        OP_ADDC,
-        OP_ADDX,
-        OP_SUB,
-        OP_SUBC,
-        OP_SUB0,
-        OP_SUBX:    result = subResult;
-
-        OP_ABCD,
-        OP_SBCD:    result = { 8'hXX, bcdLatch};
-
-        default:    result = 'X;
         endcase
     end
 
@@ -306,103 +334,126 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
     // CCR flags process
     always_comb begin
 
-        ccrTemp[XF] = pswCcr[XF];     ccrTemp[CF] = 0;     ccrTemp[VF] = 0;
+        ccrTemp[XF] = pswCcr[XF];
+        ccrTemp[CF] = 1'b0;
+        ccrTemp[VF] = 1'b0;
 
         // Not on all operators
-        ccrTemp[ ZF] = isByte ? ~(| result[7:0]) : ~(| result);
-        ccrTemp[ NF] = isByte ? result[7] : result[15];
+        ccrTemp[ZF] = isByte ? ~(|result[7:0]) : ~(|result);
+        ccrTemp[NF] = isByte ? result[7] : result[15];
 
-        unique case( oper)
-
-        OP_EXT:
-            // Division overflow.
-            if( aluColumn == 5) begin
-                ccrTemp[VF] = 1'b1;
-                ccrTemp[NF] = 1'b1;             ccrTemp[ ZF] = 1'b0;
-            end
-
-        OP_SUB0,                // used by NOT
-        OP_OR,
-        OP_EOR:
+        unique case (oper)
+            OP_0, // not used
+            OP_1, // not used
+            OP_ABCD,
+            OP_SBCD:
             begin
-                ccrTemp[CF] = 0;      ccrTemp[VF] = 0;
+                ccrTemp[XF] = bcdCarry;
+                ccrTemp[CF] = bcdCarry;
+                ccrTemp[VF] = bcdOverf;
             end
 
-        OP_AND:
+            OP_SUB0, // used by NOT
+            OP_ADD0, // not used
+            OP_OR,
+            OP_EOR:
+            begin
+                ccrTemp[CF] = 1'b0;
+                ccrTemp[VF] = 1'b0;
+            end
+
+            OP_AND:
             begin
                 // ROXL/ROXR indeed copy X to C in column 1 (OP_AND), executed before entering the loop.
                 // Needed when rotate count is zero, the ucode with the ROX operator never reached.
                 //  C must be set to the value of X, X remains unaffected.
-                if( (aluColumn == 1) & (row[11] | row[8]))
+                if ((aluColumn == 1) & (row[11] | row[8])) begin
                     ccrTemp[CF] = pswCcr[XF];
-                else
-                    ccrTemp[CF] = 0;
-                ccrTemp[VF] = 0;
+                end
+                else begin
+                    ccrTemp[CF] = 1'b0;
+                end
+                ccrTemp[VF] = 1'b0;
             end
 
-        // Assumes col 3 of DIV use C and not X !
-        // V will be set in other cols (2/3) of DIV
-        OP_SLAA:   ccrTemp[ CF] = aOperand[15];
-
-        OP_LSL,OP_ROXL:
+            OP_EXT:
             begin
-                ccrTemp[ CF] = shftMsb;
-                ccrTemp[ XF] = shftMsb;
-                ccrTemp[ VF] = 1'b0;
+                // Division overflow.
+                if (aluColumn == 5) begin
+                    ccrTemp[VF] = 1'b1;
+                    ccrTemp[NF] = 1'b1;
+                    ccrTemp[ZF] = 1'b0;
+                end
             end
 
-        OP_LSR,OP_ROXR:
+            OP_ADD,
+            OP_ADDC,
+            OP_ADDX,
+            OP_SUB,
+            OP_SUBC,
+            OP_SUBX:
+            begin
+                ccrTemp[CF] = subCout;
+                ccrTemp[XF] = subCout;
+                ccrTemp[VF] = subOv;
+            end
+
+            OP_LSL,
+            OP_ROXL:
+            begin
+                ccrTemp[CF] = shftMsb;
+                ccrTemp[XF] = shftMsb;
+                ccrTemp[VF] = 1'b0;
+            end
+
+            OP_LSR,
+            OP_ROXR:
             begin
                 // 0 Needed for mul, or carry gets in high word
-                ccrTemp[ CF] = shftIsMul ? 1'b0 : aOperand[0];
-                ccrTemp[ XF] = aOperand[0];
+                ccrTemp[CF] = shftIsMul ? 1'b0 : aOperand[0];
+                ccrTemp[XF] = aOperand[0];
                 // Not relevant for MUL, we clear it at mulm6 (1f) anyway.
                 // Not that MUL can never overlow!
-                ccrTemp[ VF] = 0;
+                ccrTemp[VF] = 1'b0;
                 // Z is checking here ALU (low result is actually in ALUE).
                 // But it is correct, see comment above.
             end
 
-        OP_ASL:
+            OP_ASL:
             begin
-                ccrTemp[ XF] = shftMsb;         ccrTemp[ CF] = shftMsb;
+                ccrTemp[XF] = shftMsb;
+                ccrTemp[CF] = shftMsb;
                 // V set if msb changed on any shift.
                 // Otherwise clear previously on OP_AND (col 1i).
-                ccrTemp[ VF] = pswCcr[VF] | (shftMsb ^
+                ccrTemp[VF] = pswCcr[VF] | (shftMsb ^
                     (isLong ? alue[15-1] : (isByte ? aOperand[7-1] : aOperand[15-1])) );
             end
-        OP_ASR:
+            
+            OP_ASR:
             begin
-                ccrTemp[ XF] = aOperand[0];     ccrTemp[ CF] = aOperand[0];
-                ccrTemp[ VF] = 0;
+                ccrTemp[XF] = aOperand[0];
+                ccrTemp[CF] = aOperand[0];
+                ccrTemp[VF] = 1'b0;
             end
 
-        // X not changed on ROL/ROR !
-        OP_ROL:     ccrTemp[ CF] = shftMsb;
-        OP_ROR:     ccrTemp[ CF] = aOperand[0];
-
-        OP_ADD,
-        OP_ADDC,
-        OP_ADDX,
-        OP_SUB,
-        OP_SUBC,
-        OP_SUBX:
+            // X not changed on ROL/ROR !
+            OP_ROL:
             begin
-                ccrTemp[ CF] = subCout;
-                ccrTemp[ XF] = subCout;
-                ccrTemp[ VF] = subOv;
+                ccrTemp[CF] = shftMsb;
             end
 
-        OP_ABCD,
-        OP_SBCD:
+            OP_ROR:
             begin
-                ccrTemp[ XF] = bcdCarry;
-                ccrTemp[ CF] = bcdCarry;
-                ccrTemp[ VF] = bcdOverf;
+                ccrTemp[CF] = aOperand[0];
             end
 
+            // Assumes col 3 of DIV use C and not X !
+            // V will be set in other cols (2/3) of DIV
+            default: // OP_SLAA
+            begin
+                ccrTemp[CF] = aOperand[15];
+            end
         endcase
-
     end
 
     // Core and psw latched at the same cycle
