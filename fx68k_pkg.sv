@@ -49,93 +49,93 @@ localparam [3:0]
 // Clocks, phases and resets
 typedef struct packed
 {
-	logic clk;
-	logic extReset;			// External sync reset on emulated system
-	logic pwrUp;			// Asserted together with reset on emulated system coldstart
-	logic enPhi1, enPhi2;	// Clock enables. Next cycle is PHI1 or PHI2
+    //logic clk;
+    logic extReset;         // External sync reset on emulated system
+    logic pwrUp;            // Asserted together with reset on emulated system coldstart
+    logic enPhi1, enPhi2;   // Clock enables. Next cycle is PHI1 or PHI2
 } s_clks;
 
 // IRD decoded signals
 typedef struct packed
 {
-	logic isPcRel;
-	logic isTas;
-	logic implicitSp;
-	logic toCcr;
-	logic rxIsDt, ryIsDt;
-	logic rxIsUsp, rxIsMovem, movemPreDecr;
-	logic isByte;
-	logic isMovep;
-	logic [2:0] rx, ry;
-	logic rxIsAreg, ryIsAreg;
-	logic [15:0] ftuConst;
-	logic [5:0] macroTvn;
-	logic inhibitCcr;
+    logic isPcRel;
+    logic isTas;
+    logic implicitSp;
+    logic toCcr;
+    logic rxIsDt, ryIsDt;
+    logic rxIsUsp, rxIsMovem, movemPreDecr;
+    logic isByte;
+    logic isMovep;
+    logic [2:0] rx, ry;
+    logic rxIsAreg, ryIsAreg;
+    logic [15:0] ftuConst;
+    logic [5:0] macroTvn;
+    logic inhibitCcr;
 } s_irdecod;
 
 // Nano code decoded signals
 typedef struct packed
 {
-	logic permStart;
-	logic waitBusFinish;
-	logic isWrite;
-	logic busByte;
-	logic isRmc;
-	logic noLowByte, noHighByte;
-	
-	logic updTpend, clrTpend;
-	logic tvn2Ftu, const2Ftu;
-	logic ftu2Dbl, ftu2Abl;
-	logic abl2Pren, updPren;
-	logic inl2psw, ftu2Sr, sr2Ftu, ftu2Ccr, pswIToFtu;
-	logic ird2Ftu, ssw2Ftu;
-	logic initST;
-	logic Ir2Ird;
-	
-	logic auClkEn, noSpAlign;
-	logic [2:0] auCntrl;
-	logic todbin, toIrc;
-	logic dbl2Atl, abl2Atl, atl2Abl, atl2Dbl;
-	logic abh2Ath, dbh2Ath;
-	logic ath2Dbh, ath2Abh;
-	
-	logic db2Aob, ab2Aob, au2Aob;
-	logic aob2Ab, updSsw;
-	// logic adb2Dob, dbd2Dob, alu2Dob;
-	logic [1:0] dobCtrl;
-	
-	logic abh2reg, abl2reg;
-	logic reg2abl, reg2abh;
-	logic dbh2reg, dbl2reg;
-	logic reg2dbl, reg2dbh;
-	logic ssp, pchdbh, pcldbl, pclabl, pchabh;
-	
-	logic rxh2dbh, rxh2abh;
-	logic dbl2rxl, dbh2rxh;
-	logic rxl2db, rxl2ab;
-	logic abl2rxl, abh2rxh;
-	logic dbh2ryh, abh2ryh;
-	logic ryl2db, ryl2ab;
-	logic ryh2dbh, ryh2abh;
-	logic dbl2ryl, abl2ryl;
-	logic rz;
-	logic rxlDbl;
-	
-	logic [2:0] aluColumn;
-	logic [1:0] aluDctrl;
-	logic aluActrl;
-	logic aluInit, aluFinish;
-	logic abd2Dcr, dcr2Dbd;
-	logic dbd2Alue, alue2Dbd;
-	logic dbd2Alub, abd2Alub;
-	
-	logic alu2Dbd, alu2Abd;
-	logic au2Db, au2Ab, au2Pc;
-	logic dbin2Abd, dbin2Dbd;
-	logic extDbh, extAbh;
-	logic ablAbd, ablAbh;
-	logic dblDbd, dblDbh;
-	logic abdIsByte;
+    logic permStart;
+    logic waitBusFinish;
+    logic isWrite;
+    logic busByte;
+    logic isRmc;
+    logic noLowByte, noHighByte;
+    
+    logic updTpend, clrTpend;
+    logic tvn2Ftu, const2Ftu;
+    logic ftu2Dbl, ftu2Abl;
+    logic abl2Pren, updPren;
+    logic inl2psw, ftu2Sr, sr2Ftu, ftu2Ccr, pswIToFtu;
+    logic ird2Ftu, ssw2Ftu;
+    logic initST;
+    logic Ir2Ird;
+    
+    logic auClkEn, noSpAlign;
+    logic [2:0] auCntrl;
+    logic todbin, toIrc;
+    logic dbl2Atl, abl2Atl, atl2Abl, atl2Dbl;
+    logic abh2Ath, dbh2Ath;
+    logic ath2Dbh, ath2Abh;
+    
+    logic db2Aob, ab2Aob, au2Aob;
+    logic aob2Ab, updSsw;
+    // logic adb2Dob, dbd2Dob, alu2Dob;
+    logic [1:0] dobCtrl;
+    
+    logic abh2reg, abl2reg;
+    logic reg2abl, reg2abh;
+    logic dbh2reg, dbl2reg;
+    logic reg2dbl, reg2dbh;
+    logic ssp, pchdbh, pcldbl, pclabl, pchabh;
+    
+    logic rxh2dbh, rxh2abh;
+    logic dbl2rxl, dbh2rxh;
+    logic rxl2db, rxl2ab;
+    logic abl2rxl, abh2rxh;
+    logic dbh2ryh, abh2ryh;
+    logic ryl2db, ryl2ab;
+    logic ryh2dbh, ryh2abh;
+    logic dbl2ryl, abl2ryl;
+    logic rz;
+    logic rxlDbl;
+    
+    logic [2:0] aluColumn;
+    logic [1:0] aluDctrl;
+    logic aluActrl;
+    logic aluInit, aluFinish;
+    logic abd2Dcr, dcr2Dbd;
+    logic dbd2Alue, alue2Dbd;
+    logic dbd2Alub, abd2Alub;
+    
+    logic alu2Dbd, alu2Abd;
+    logic au2Db, au2Ab, au2Pc;
+    logic dbin2Abd, dbin2Dbd;
+    logic extDbh, extAbh;
+    logic ablAbd, ablAbh;
+    logic dblDbd, dblDbh;
+    logic abdIsByte;
 } s_nanod;
 
 // EA decode
