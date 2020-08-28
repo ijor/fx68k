@@ -1043,8 +1043,8 @@ module irdDecode
             lineOnehot[4'hC]:
                 ftuConst = 16'h000F;
 
-            lineOnehot[4]: // TAS
-                ftuConst = 16'h8000;
+            lineOnehot[4'h4]: // TAS
+                ftuConst = 16'h0080;
 
             default:
                 ftuConst = 16'h0000;
