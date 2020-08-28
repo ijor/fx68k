@@ -58,85 +58,147 @@ typedef struct packed
 // IRD decoded signals
 typedef struct packed
 {
-    logic isPcRel;
-    logic isTas;
-    logic implicitSp;
-    logic toCcr;
-    logic rxIsDt, ryIsDt;
-    logic rxIsUsp, rxIsMovem, movemPreDecr;
-    logic isByte;
-    logic isMovep;
-    logic [2:0] rx, ry;
-    logic rxIsAreg, ryIsAreg;
+    logic        isPcRel;
+    logic        isTas;
+    logic        implicitSp;
+    logic        toCcr;
+    logic        rxIsDt;
+    logic        ryIsDt;
+    logic        rxIsUsp;
+    logic        rxIsMovem;
+    logic        movemPreDecr;
+    logic        isByte;
+    logic        isMovep;
+    logic  [2:0] rx;
+    logic  [2:0] ry;
+    logic        rxIsAreg;
+    logic        ryIsAreg;
     logic [15:0] ftuConst;
-    logic [5:0] macroTvn;
-    logic inhibitCcr;
+    logic  [5:0] macroTvn;
+    logic        inhibitCcr;
 } s_irdecod;
 
 // Nano code decoded signals
 typedef struct packed
 {
-    logic permStart;
-    logic waitBusFinish;
-    logic isWrite;
-    logic busByte;
-    logic isRmc;
-    logic noLowByte, noHighByte;
-    
-    logic updTpend, clrTpend;
-    logic tvn2Ftu, const2Ftu;
-    logic ftu2Dbl, ftu2Abl;
-    logic abl2Pren, updPren;
-    logic inl2psw, ftu2Sr, sr2Ftu, ftu2Ccr, pswIToFtu;
-    logic ird2Ftu, ssw2Ftu;
-    logic initST;
-    logic Ir2Ird;
-    
-    logic auClkEn, noSpAlign;
-    logic [2:0] auCntrl;
-    logic todbin, toIrc;
-    logic dbl2Atl, abl2Atl, atl2Abl, atl2Dbl;
-    logic abh2Ath, dbh2Ath;
-    logic ath2Dbh, ath2Abh;
-    
-    logic db2Aob, ab2Aob, au2Aob;
-    logic aob2Ab, updSsw;
-    // logic adb2Dob, dbd2Dob, alu2Dob;
-    logic [1:0] dobCtrl;
-    
-    logic abh2reg, abl2reg;
-    logic reg2abl, reg2abh;
-    logic dbh2reg, dbl2reg;
-    logic reg2dbl, reg2dbh;
-    logic ssp, pchdbh, pcldbl, pclabl, pchabh;
-    
-    logic rxh2dbh, rxh2abh;
-    logic dbl2rxl, dbh2rxh;
-    logic rxl2db, rxl2ab;
-    logic abl2rxl, abh2rxh;
-    logic dbh2ryh, abh2ryh;
-    logic ryl2db, ryl2ab;
-    logic ryh2dbh, ryh2abh;
-    logic dbl2ryl, abl2ryl;
-    logic rz;
-    logic rxlDbl;
-    
-    logic [2:0] aluColumn;
-    logic [1:0] aluDctrl;
-    logic aluActrl;
-    logic aluInit, aluFinish;
-    logic abd2Dcr, dcr2Dbd;
-    logic dbd2Alue, alue2Dbd;
-    logic dbd2Alub, abd2Alub;
-    
-    logic alu2Dbd, alu2Abd;
-    logic au2Db, au2Ab, au2Pc;
-    logic dbin2Abd, dbin2Dbd;
-    logic extDbh, extAbh;
-    logic ablAbd, ablAbh;
-    logic dblDbd, dblDbh;
-    logic abdIsByte;
-} s_nanod;
+    logic       isRmc;         // r
+
+    logic       auClkEn;       // r
+    logic       noSpAlign;     // r
+    logic [2:0] auCntrl;       // r
+    logic       todbin;        // r
+    logic       toIrc;         // r
+    logic       dbl2Atl;       // r
+    logic       abl2Atl;       // r
+    logic       atl2Abl;       // r
+    logic       atl2Dbl;       // r
+    logic       abh2Ath;       // r
+    logic       dbh2Ath;       // r
+    logic       ath2Dbh;       // r
+    logic       ath2Abh;       // r
+
+    logic       aob2Ab;        // r
+    // logic adb2Dob;             // r
+    // logic dbd2Dob;             // r
+    // logic alu2Dob;             // r
+    logic [1:0] dobCtrl;       // r
+
+    logic       rxh2dbh;       // r
+    logic       rxh2abh;       // r
+    logic       dbl2rxl;       // r
+    logic       dbh2rxh;       // r
+    logic       rxl2db;        // r
+    logic       rxl2ab;        // r
+    logic       abl2rxl;       // r
+    logic       abh2rxh;       // r
+    logic       dbh2ryh;       // r
+    logic       abh2ryh;       // r
+    logic       ryl2db;        // r
+    logic       ryl2ab;        // r
+    logic       ryh2dbh;       // r
+    logic       ryh2abh;       // r
+    logic       dbl2ryl;       // r
+    logic       abl2ryl;       // r
+
+    logic       abd2Dcr;       // r
+    logic       dcr2Dbd;       // r
+    logic       dbd2Alue;      // r
+    logic       alue2Dbd;      // r
+    logic       dbd2Alub;      // r
+    logic       abd2Alub;      // r
+
+    logic       alu2Dbd;       // r
+    logic       alu2Abd;       // r
+    logic       extDbh;        // r
+    logic       extAbh;        // r
+    logic       ablAbd;        // r
+    logic       ablAbh;        // r
+    logic       dblDbd;        // r
+    logic       dblDbh;        // r
+} s_nanod_r;
+
+typedef struct packed
+{
+    logic       permStart;     // w
+    logic       waitBusFinish; // w
+    logic       isWrite;       // w
+    logic       busByte;       // w
+    logic       noLowByte;     // w
+    logic       noHighByte;    // w
+
+    logic       updTpend;      // w
+    logic       clrTpend;      // w
+    logic       tvn2Ftu;       // w
+    logic       const2Ftu;     // w
+    logic       ftu2Dbl;       // w
+    logic       ftu2Abl;       // w
+    logic       abl2Pren;      // w
+    logic       updPren;       // w
+    logic       inl2psw;       // w
+    logic       ftu2Sr;        // w
+    logic       sr2Ftu;        // w
+    logic       ftu2Ccr;       // w
+    logic       pswIToFtu;     // w
+    logic       ird2Ftu;       // w
+    logic       ssw2Ftu;       // w
+    logic       initST;        // w
+    logic       Ir2Ird;        // w
+
+    logic       db2Aob;        // w
+    logic       ab2Aob;        // w
+    logic       au2Aob;        // w
+    logic       updSsw;        // w
+
+    logic       abh2reg;       // w
+    logic       abl2reg;       // w
+    logic       reg2abl;       // w
+    logic       reg2abh;       // w
+    logic       dbh2reg;       // w
+    logic       dbl2reg;       // w
+    logic       reg2dbl;       // w
+    logic       reg2dbh;       // w
+    logic       ssp;           // w
+    logic       pchdbh;        // w
+    logic       pcldbl;        // w
+    logic       pclabl;        // w
+    logic       pchabh;        // w
+
+    logic       rz;            // w
+    logic       rxlDbl;        // w
+
+    logic [2:0] aluColumn;     // w
+    logic [1:0] aluDctrl;      // w
+    logic       aluActrl;      // w
+    logic       aluInit;       // w
+    logic       aluFinish;     // w
+
+    logic       au2Db;         // w
+    logic       au2Ab;         // w
+    logic       au2Pc;         // w
+    logic       dbin2Abd;      // w
+    logic       dbin2Dbd;      // w
+    logic       abdIsByte;     // w
+} s_nanod_w;
 
 // EA decode
 function [3:0] eaDecode;
