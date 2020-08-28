@@ -209,10 +209,14 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
     // Adder carry in selector
     always_comb begin
         case (oper[2:0])
-            OP_ADD0[2:0], OP_SUB0[2:0]: addCin = 1'b1;            // NOT = 0 - op - 1
-            OP_ADD[2:0],  OP_SUB[2:0]:  addCin = 1'b0;
-            OP_ADDC[2:0], OP_SUBC[2:0]: addCin = ccrCore[CF];
-            OP_ADDX[2:0], OP_SUBX[2:0]: addCin = pswCcr[XF];
+            OP_ADD0[2:0]: addCin = 1'b1; // Not used
+            OP_SUB0[2:0]: addCin = 1'b0; // NOT = 0 + ~op
+            OP_ADD[2:0]:  addCin = 1'b0;
+            OP_SUB[2:0]:  addCin = 1'b1;
+            OP_ADDC[2:0]: addCin =  ccrCore[CF];
+            OP_SUBC[2:0]: addCin = ~ccrCore[CF];
+            OP_ADDX[2:0]: addCin =  pswCcr[XF];
+            OP_SUBX[2:0]: addCin = ~pswCcr[XF];
         endcase
     end
 
@@ -299,25 +303,23 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
         output cout, ov;
 
         // Not very efficient!
-        logic [16:0] rtemp;
+        logic [17:0] rtemp;
         logic rm,sm,dm,tsm;
 
         begin
-            if( isByte)
+            rtemp = { 1'b0, inpb, cin }
+                  + { 1'b0, inpa ^ {16{~bAdd}}, cin };
+            if (isByte)
             begin
-                rtemp = bAdd ? { 9'b0, inpb[7:0] } + { 9'b0, inpa[7:0] } + { 16'b0, cin }
-                             : { 9'b0, inpb[7:0] } - { 9'b0, inpa[7:0] } - { 16'b0, cin };
-                result = { {8{ rtemp[7]}}, rtemp[7:0]};
-                cout = rtemp[8];
+                result = { {8{ rtemp[8]}}, rtemp[8:1] };
+                cout   = rtemp[9];
             end
             else begin
-                rtemp = bAdd ? { 1'b0, inpb } + { 1'b0, inpa } + { 16'b0, cin }
-                             : { 1'b0, inpb } - { 1'b0, inpa } - { 16'b0, cin };
-                result = rtemp[ 15:0];
-                cout = rtemp[16];
+                result = rtemp[16:1];
+                cout   = rtemp[17];
             end
 
-            rm  = isByte ? rtemp[7] : rtemp[15];
+            rm  = isByte ? rtemp[8] : rtemp[16];
             dm  = isByte ? inpb[ 7] : inpb[ 15];
             tsm = isByte ? inpa[ 7] : inpa[ 15];
             sm  = bAdd ? tsm : ~tsm;
@@ -325,8 +327,7 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
             ov = (sm & dm & ~rm) | (~sm & ~dm & rm);
 
             // Store half carry for bcd correction
-            subHcarry = inpa[4] ^ inpb[4] ^ rtemp[4];
-
+            subHcarry = inpa[4] ^ inpb[4] ^ rtemp[5];
         end
     endtask
 
