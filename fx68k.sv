@@ -22,25 +22,44 @@ import fx68k_pkg::*;
 
 module fx68k
 (
-    input clk,
-    input HALTn,                    // Used for single step only. Force high if not used
-    // input logic HALTn = 1'b1,            // Not all tools support default port values
-
+    input         clk,      // Master clock
+    input         enPhi1,   // Clock enable : next cycle is PHI1 (clock rising edge)
+    input         enPhi2,   // Clock enable : next cycle is PHI2 (clock falling edge)
+    
+    input         HALTn,    // Used for single step only. Force high if not used
     // These two signals don't need to be registered. They are not async reset.
-    input extReset,         // External sync reset on emulated system
-    input pwrUp,            // Asserted together with reset on emulated system coldstart
-    input enPhi1, enPhi2,   // Clock enables. Next cycle is PHI1 or PHI2
-
-    output eRWn, output ASn, output LDSn, output UDSn,
-    output logic E, output VMAn,
-    output FC0, output FC1, output FC2,
-    output BGn,
-    output oRESETn, output oHALTEDn,
-    input DTACKn, input VPAn,
-    input BERRn,
-    input BRn, BGACKn,
-    input IPL0n, input IPL1n, input IPL2n,
-    input [15:0] iEdb, output [15:0] oEdb,
+    input         extReset, // External sync reset on emulated system
+    input         pwrUp,    // Asserted together with reset on emulated system coldstart
+    output        oRESETn,
+    output        oHALTEDn,
+    // 6800 peripheral access
+    output logic  E,        // E clock
+    output        E_rise,   // E clock rising edge
+    output        E_fall,   // E clock falling edge
+    input         VPAn,     // Valid peripheral address
+    output        VMAn,     // Valid memory address
+    // Control signals
+    output        ASn,      // Address strobe
+    output        eRWn,     // Read (1) / Write (0)
+    output        LDSn,     // Lower data strobe
+    output        UDSn,     // Upper data strobe
+    output        FC2,      // Function code
+    output        FC1,
+    output        FC0,
+    input         DTACKn,   // Data acknowledge
+    input         BERRn,    // Bus error
+    // Bus cycles stealing
+    input         BRn,      // Bus request
+    output        BGn,      // Bus granted
+    input         BGACKn,   // Bus granted acknowledge
+    // Interrupts requests
+    input         IPL2n,    // Interrupt level
+    input         IPL1n,
+    input         IPL0n,
+    // Data bus
+    input  [15:0] iEdb,
+    output [15:0] oEdb,
+    // Address bus
     output [31:1] eab
 );
 
@@ -418,7 +437,7 @@ module fx68k
 
     // E clock and counter, VMA
     reg [3:0] eCntr;
-    reg rVma;
+    reg       rVma;
 
     assign VMAn = rVma;
 
@@ -432,23 +451,23 @@ module fx68k
             eCntr <= 4'd0;
             rVma  <= 1'b1;
         end
+        
+        // Cycles counter
         if (Clks.enPhi2) begin
-            if (eCntr == 4'd9)
-                E <= 1'b0;
-            else if (eCntr == 4'd5)
-                E <= 1'b1;
-
-            if (eCntr == 4'd9)
-                eCntr <= 4'd0;
-            else
-                eCntr <= eCntr + 4'd1;
+            eCntr <= (eCntr == 4'd9) ? 4'd0 : eCntr + 4'd1;
         end
+        
+        // E clock generation
+        E <= (E | E_rise) & ~E_fall;
 
         if (Clks.enPhi2 & addrOe & ~Vpai & (eCntr == 4'd3))
             rVma <= 1'b0;
         else if (Clks.enPhi1 & eCntr == 4'd0)
             rVma <= 1'b1;
     end
+
+    assign E_rise = (eCntr == 4'd5) ? Clks.enPhi2 : 1'b0;
+    assign E_fall = (eCntr == 4'd9) ? Clks.enPhi2 : 1'b0;
 
     always_ff @(posedge clk) begin
 
@@ -1480,7 +1499,7 @@ localparam
         end
     end
 
-    assign eab = aob[31:1];
+    assign eab  = aob[31:1];
     assign aob0 = aob[0];
 
     // AU
@@ -2751,31 +2770,48 @@ endmodule
 //
 
 `ifdef FX68K_TEST
-module fx68kTop( input clk32,
-    input extReset,
-    // input pwrUp,
-
-    input DTACKn, input VPAn,
-    input BERRn,
-    input BRn, BGACKn,
-    input IPL0n, input IPL1n, input IPL2n,
-    input [15:0] iEdb,
-
+module fx68kTop
+(
+    input         clk32,
+    input         extReset,
+    output        oRESETn,
+    output        oHALTEDn,
+    //
+    output        E,
+    output        E_rise,
+    output        E_fall,
+    input         VPAn,
+    output        VMAn,
+    //
+    output        ASn,
+    output        eRWn,
+    output        LDSn,
+    output        UDSn,
+    output        FC2,
+    output        FC1,
+    output        FC0,
+    input         DTACKn,
+    input         BERRn,
+    //
+    input         BRn,
+    output        BGn,
+    input         BGACKn,
+    //
+    input         IPL2n,
+    input         IPL1n,
+    input         IPL0n,
+    //
+    input  [15:0] iEdb,
     output [15:0] oEdb,
-    output eRWn, output ASn, output LDSn, output UDSn,
-    output logic E, output VMAn,
-    output FC0, output FC1, output FC2,
-    output BGn,
-    output oRESETn, output oHALTEDn,
     output [31:1] eab
-    );
+);
 
     // Clock must be at least twice the desired frequency. A 32 MHz clock means a maximum 16 MHz effective frequency.
     // In this example we divide the clock by 4. Resulting on an effective processor running at 8 MHz.
 
-    reg [1:0] clkDivisor = '0;
+    reg [1:0] clkDivisor = 2'd0;
     always @( posedge clk32) begin
-        clkDivisor <= clkDivisor + 1'b1;
+        clkDivisor <= clkDivisor + 2'd1;
     end
 
     /*
@@ -2784,23 +2820,34 @@ module fx68kTop( input clk32,
     There can be any number of cycles, or none, even variable non constant cycles, between each pulse.
     */
 
-    wire enPhi1 = (clkDivisor == 2'b11);
-    wire enPhi2 = (clkDivisor == 2'b01);
+    wire enPhi1 = (clkDivisor == 2'd3) ? 1'b1 : 1'b0;
+    wire enPhi2 = (clkDivisor == 2'd1) ? 1'b1 : 1'b0;
 
 
-    fx68k fx68k( .clk( clk32),
-        .extReset, .pwrUp( extReset), .enPhi1, .enPhi2,
+    fx68k fx68k
+    (
+        .clk (clk32),
+        .enPhi1,
+        .enPhi2,
+        
+        .extReset,
+        .pwrUp (extReset),
+        .oRESETn, .oHALTEDn,
 
-        .DTACKn, .VPAn, .BERRn, .BRn, .BGACKn,
+        .E, .E_rise, .E_fall,
+        .VPAn, .VMAn,
+        
+        .ASn, .eRWn, .LDSn, .UDSn,
+        .FC2, .FC1, .FC0,
+        .DTACKn, .BERRn,
+        
+        .BRn, .BGn, .BGACKn,
         .IPL0n, .IPL1n, .IPL2n,
+        
         .iEdb,
-
         .oEdb,
-        .eRWn, .ASn, .LDSn, .UDSn,
-        .E, .VMAn,
-        .FC0, .FC1, .FC2,
-        .BGn,
-        .oRESETn, .oHALTEDn, .eab);
+        .eab
+    );
 
 endmodule
 `endif
