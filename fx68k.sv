@@ -259,7 +259,17 @@ module fx68k
     wire [15:0] psw = { pswT, 1'b0, pswS, 2'b00, pswI, ccr };
 
     reg  [15:0] ftu;
-    reg  [15:0] Irc, Ir, Ird;
+    
+    reg  [15:0] Irc;
+    wire [15:0] IrcL;
+    
+    reg  [15:0] Ir;
+    reg  [15:0] IrL;
+    reg   [3:0] IrEA1;
+    reg   [3:0] IrEA2;
+    
+    reg  [15:0] Ird;
+    reg  [15:0] IrdL;
 
     wire [15:0] alue;
     wire [15:0] Abl;
@@ -268,17 +278,25 @@ module fx68k
     wire [UADDR_WIDTH-1:0] a1, a2, a3;
     wire isPriv, isIllegal, isLineA, isLineF;
 
+    onehotEncoder4 ircLineDecod(Irc[15:12], IrcL);
 
     // IR & IRD forwarding
+    // and some IR pre-decoding
     always_ff @(posedge clk) begin
 
         if (enT1) begin
             if (Nanod_w.Ir2Ird) begin
-                Ird <= Ir;
+                Ird   <= Ir;
+                IrdL  <= IrL;
             end
-            else if(microLatch[0]) begin
+            else if (microLatch[0]) begin
                 // prevented by IR => IRD !
-                Ir <= Irc;
+                Ir    <= Irc;
+                // Instruction groups pre-decoding
+                IrL   <= IrcL;
+                // Effective address pre-decoding
+                IrEA1 <= eaDecode(Irc[5:0]);
+                IrEA2 <= eaDecode({ Irc[8:6], Irc[11:9] });
             end
         end
     end
@@ -311,7 +329,10 @@ module fx68k
     uaddrDecode U_uaddrDecode
     (
         .opcode (Ir),
-        .a1, .a2, .a3, .isPriv, .isIllegal, .isLineA, .isLineF, .lineBmap()
+        .opline (IrL),
+        .ea1    (IrEA1),
+        .ea2    (IrEA2),
+        .a1, .a2, .a3, .isPriv, .isIllegal, .isLineA, .isLineF
     );
 
     sequencer sequencer( .clk, .Clks, .enT3, .microLatch, .Ird,
@@ -327,7 +348,7 @@ module fx68k
 
     nDecoder3 nDecoder( .clk, .Nanod_r, .Nanod_w, .Irdecod, .enT2, .enT4, .microLatch, .nanoLatch);
 
-    irdDecode irdDecode( .ird( Ird), .Irdecod);
+    irdDecode irdDecode( .Ird, .IrdL, .Irdecod);
 
     busControl busControl( .clk, .Clks, .enT1, .enT4, .permStart(Nanod_w.permStart), .permStop(Nanod_w.waitBusFinish), .iStop,
         .aob0, .isWrite(Nanod_w.isWrite), .isRmc(Nanod_r.isRmc), .isByte(busIsByte), .busAvail,
@@ -918,81 +939,75 @@ endmodule
 //
 module irdDecode
 (
-    input [15:0] ird,
+    input     [15:0] Ird,
+    input     [15:0] IrdL,
     output s_irdecod Irdecod
 );
 
-    wire [3:0] line = ird[15:12];
-    logic [15:0] lineOnehot;
-
-    // This can be registered and pipelined from the IR decoder !
-    onehotEncoder4 irdLines( line, lineOnehot);
-
     reg  implicitSp;
-    
-    wire isRegShift = (lineOnehot[4'hE]) & (ird[7:6] != 2'b11);
-    wire isDynShift = isRegShift & ird[5];
-    wire isTas      = (ird[11:6] == 6'b101011) ? lineOnehot[4'h4] : 1'b0;
+    wire isRegShift = (IrdL[4'hE]) & (Ird[7:6] != 2'b11);
+    wire isDynShift = isRegShift & Ird[5];
+    wire isTas      = (Ird[11:6] == 6'b101011) ? IrdL[4'h4] : 1'b0;
 
-    assign Irdecod.isPcRel = (& ird[ 5:3]) & ~isDynShift & !ird[2] & ird[1];
+    assign Irdecod.isPcRel = (&Ird[5:3]) & ~isDynShift & !Ird[2] & Ird[1];
     assign Irdecod.isTas   = isTas;
 
-    assign Irdecod.rx = ird[11:9];
-    assign Irdecod.ry = ird[ 2:0];
+    assign Irdecod.rx = Ird[11:9];
+    assign Irdecod.ry = Ird[ 2:0];
 
-    wire isPreDecr = (ird[5:3] == 3'b100) ? 1'b1 : 1'b0;
-    wire eaAreg    = (ird[5:3] == 3'b001) ? 1'b1 : 1'b0;
+    wire isPreDecr = (Ird[5:3] == 3'b100) ? 1'b1 : 1'b0;
+    wire eaAreg    = (Ird[5:3] == 3'b001) ? 1'b1 : 1'b0;
 
     // rx is A or D
     // movem
     always_comb begin
         unique case (1'b1)
-            lineOnehot[4'h1],
-            lineOnehot[4'h2],
-            lineOnehot[4'h3]:
+            IrdL[4'h1],
+            IrdL[4'h2],
+            IrdL[4'h3]:
                 // MOVE: RX always Areg except if dest mode is Dn 000
-                Irdecod.rxIsAreg = (|ird[8:6]);
+                Irdecod.rxIsAreg = (|Ird[8:6]);
 
-            lineOnehot[4'h4]:
+            IrdL[4'h4]:
                 // not CHK (LEA)
-                Irdecod.rxIsAreg = (&ird[8:6]);
+                Irdecod.rxIsAreg = (&Ird[8:6]);
 
-            lineOnehot[4'h8]:
+            IrdL[4'h8]:
                 // SBCD
-                Irdecod.rxIsAreg = eaAreg & ird[8] & ~ird[7];
-                
-            lineOnehot[4'hC]:
-                // ABCD/EXG An,An
-                Irdecod.rxIsAreg = eaAreg & ird[8] & ~ird[7];
+                Irdecod.rxIsAreg = eaAreg & Ird[8] & ~Ird[7];
 
-            lineOnehot[4'h9],
-            lineOnehot[4'hB],
-            lineOnehot[4'hD]:
+            IrdL[4'hC]:
+                // ABCD/EXG An,An
+                Irdecod.rxIsAreg = eaAreg & Ird[8] & ~Ird[7];
+
+            IrdL[4'h9],
+            IrdL[4'hB],
+            IrdL[4'hD]:
                 Irdecod.rxIsAreg =
-                    (ird[7] & ird[6]) |                      // SUBA/CMPA/ADDA
-                    (eaAreg & ird[8] & (ird[7:6] != 2'b11)); // SUBX/CMPM/ADDX
+                    (Ird[7] & Ird[6]) |                      // SUBA/CMPA/ADDA
+                    (eaAreg & Ird[8] & (Ird[7:6] != 2'b11)); // SUBX/CMPM/ADDX
             default:
                 Irdecod.rxIsAreg = implicitSp;
         endcase
     end
 
     // RX is movem
-    assign Irdecod.rxIsMovem    = lineOnehot[4'h4] & ~ird[8] & ~implicitSp;
-    assign Irdecod.movemPreDecr = lineOnehot[4'h4] & ~ird[8] & ~implicitSp & isPreDecr;
+    assign Irdecod.rxIsMovem    = IrdL[4'h4] & ~Ird[8] & ~implicitSp;
+    assign Irdecod.movemPreDecr = IrdL[4'h4] & ~Ird[8] & ~implicitSp & isPreDecr;
 
     // RX is DT.
     // but SSP explicit or pc explicit has higher priority!
     // addq/subq (scc & dbcc also, but don't use rx)
     // Immediate including static bit
-    assign Irdecod.rxIsDt = lineOnehot[4'h5] | (lineOnehot[4'h0] & ~ird[8]);
+    assign Irdecod.rxIsDt = IrdL[4'h5] | (IrdL[4'h0] & ~Ird[8]);
 
-    // RX is USP
-    assign Irdecod.rxIsUsp = lineOnehot[4'h4] & (ird[11:4] == 8'hE6);
+    // RX is USP (16'h4E6x)
+    assign Irdecod.rxIsUsp = IrdL[4'h4] & (Ird[11:4] == 8'hE6);
 
     // RY is DT
     // rz or PC explicit has higher priority
 
-    wire eaImmOrAbs = (ird[5:3] == 3'b111) & ~ird[1];
+    wire eaImmOrAbs = (Ird[5:3] == 3'b111) & ~Ird[1];
     assign Irdecod.ryIsDt = eaImmOrAbs & ~isRegShift;
 
     // RY is Address register
@@ -1000,7 +1015,7 @@ module irdDecode
         logic eaIsAreg;
 
         // On most cases RY is Areg expect if mode is 000 (DATA REG) or 111 (IMM, ABS,PC REL)
-        eaIsAreg = (ird[5:3] != 3'b000) & (ird[5:3] != 3'b111);
+        eaIsAreg = (Ird[5:3] != 3'b000) & (Ird[5:3] != 3'b111);
 
         unique case (1'b1)
             // MOVE: RY always Areg expect if mode is 000 (DATA REG) or 111 (IMM, ABS,PC REL)
@@ -1008,15 +1023,15 @@ module irdDecode
             default:
                 Irdecod.ryIsAreg = eaIsAreg;
 
-            lineOnehot[4'h5]:
+            IrdL[4'h5]:
                 // DBcc is an exception
-                Irdecod.ryIsAreg = eaIsAreg & (ird[7:3] != 5'b11001);
+                Irdecod.ryIsAreg = eaIsAreg & (Ird[7:3] != 5'b11001);
 
-            lineOnehot[4'h6],
-            lineOnehot[4'h7]:
+            IrdL[4'h6],
+            IrdL[4'h7]:
                 Irdecod.ryIsAreg = 1'b0;
 
-            lineOnehot[4'hE]:
+            IrdL[4'hE]:
                 Irdecod.ryIsAreg = ~isRegShift;
         endcase
     end
@@ -1026,34 +1041,34 @@ module irdDecode
     // Original implementation sets this for some instructions that aren't really byte size
     // but doesn't matter because they don't have a byte transfer enabled at nanocode, such as MOVEQ
 
-    wire xIsScc = (ird[7:6] == 2'b11) & (ird[5:3] != 3'b001);
-    wire xStaticMem = (ird[11:8] == 4'b1000) & (ird[5:4] == 2'b00);     // Static bit to mem
+    wire xIsScc = (Ird[7:6] == 2'b11) & (Ird[5:3] != 3'b001);
+    wire xStaticMem = (Ird[11:8] == 4'b1000) & (Ird[5:4] == 2'b00);     // Static bit to mem
     always_comb begin
         unique case (1'b1)
-            lineOnehot[4'h0]:
+            IrdL[4'h0]:
                 Irdecod.isByte =
-                ( ird[8] & (ird[5:4] != 2'b00)                  ) | // Dynamic bit to mem
-                ( (ird[11:8] == 4'b1000) & (ird[5:4] != 2'b00)  ) | // Static bit to mem
-                ( (ird[8:7] == 2'b10) & (ird[5:3] == 3'b001)    ) | // Movep from mem only! For byte mux
-                ( (ird[8:6] == 3'b000) & !xStaticMem );             // Immediate byte
+                ( Ird[8] & (Ird[5:4] != 2'b00)                  ) | // Dynamic bit to mem
+                ( (Ird[11:8] == 4'b1000) & (Ird[5:4] != 2'b00)  ) | // Static bit to mem
+                ( (Ird[8:7] == 2'b10) & (Ird[5:3] == 3'b001)    ) | // Movep from mem only! For byte mux
+                ( (Ird[8:6] == 3'b000) & !xStaticMem );             // Immediate byte
 
-            lineOnehot[4'h1]:
+            IrdL[4'h1]:
                 Irdecod.isByte = 1'b1;      // MOVE.B
 
 
-            lineOnehot[4'h4]:
-                Irdecod.isByte = (ird[7:6] == 2'b00) | isTas;
+            IrdL[4'h4]:
+                Irdecod.isByte = (Ird[7:6] == 2'b00) ? 1'b1 : isTas;
 
-            lineOnehot[4'h5]:
-                Irdecod.isByte = (ird[7:6] == 2'b00) | xIsScc;
+            IrdL[4'h5]:
+                Irdecod.isByte = (Ird[7:6] == 2'b00) ? 1'b1 : xIsScc;
 
-            lineOnehot[4'h8],
-            lineOnehot[4'h9],
-            lineOnehot[4'hB],
-            lineOnehot[4'hC],
-            lineOnehot[4'hD],
-            lineOnehot[4'hE]:
-                Irdecod.isByte = (ird[7:6] == 2'b00);
+            IrdL[4'h8],
+            IrdL[4'h9],
+            IrdL[4'hB],
+            IrdL[4'hC],
+            IrdL[4'hD],
+            IrdL[4'hE]:
+                Irdecod.isByte = (Ird[7:6] == 2'b00) ? 1'b1 : 1'b0;
 
             default:
                 Irdecod.isByte = 1'b0;
@@ -1061,7 +1076,7 @@ module irdDecode
     end
 
     // Need it for special byte size. Bus is byte, but whole register word is modified.
-    assign Irdecod.isMovep = lineOnehot[4'h0] & ird[8] & eaAreg;
+    assign Irdecod.isMovep = IrdL[4'h0] & Ird[8] & eaAreg;
 
 
     // rxIsSP implicit use of RX for actual SP transfer
@@ -1071,12 +1086,12 @@ module irdDecode
 
     always_comb begin
         unique case (1'b1)
-            lineOnehot[6]:
+            IrdL[4'h6]:
                 // BSR
-                implicitSp = (ird[11:8] == 4'b0001);
-            lineOnehot[4]:
+                implicitSp = (Ird[11:8] == 4'b0001) ? 1'b1 : 1'b0;
+            IrdL[4'h4]:
                 // Misc like RTS, JSR, etc
-                implicitSp = (ird[11:8] == 4'b1110) | (ird[11:6] == 6'b1000_01);
+                implicitSp = (Ird[11:8] == 4'b1110) | (Ird[11:6] == 6'b1000_01);
             default:
                 implicitSp = 1'b0;
         endcase
@@ -1086,32 +1101,33 @@ module irdDecode
     // Modify CCR (and not SR)
     // Probably overkill !! Only needs to distinguish SR vs CCR
     // RTR, MOVE to CCR, xxxI to CCR
-    assign Irdecod.toCcr =  ( lineOnehot[4] & ((ird[11:0] == 12'he77) | (ird[11:6] == 6'b010011)) ) |
-                            ( lineOnehot[0] & (ird[8:6] == 3'b000));
+    assign Irdecod.toCcr =  ( IrdL[4'h4] & ((Ird[11:0] == 12'he77) | (Ird[11:6] == 6'b010011)) ) |
+                            ( IrdL[4'h0] & (Ird[8:6] == 3'b000));
 
     // FTU constants
     // This should not be latched on T3/T4. Latch on T2 or not at all. FTU needs it on next T3.
     // Note: Reset instruction gets constant from ALU not from FTU!
     logic [15:0] ftuConst;
-    wire [3:0] zero28 = (ird[11:9] == 0) ? 4'h8 : { 1'b0, ird[11:9]};       // xltate 0,1-7 into 8,1-7
+    wire [3:0] zero28 = (Ird[11:9] == 0) ? 4'h8 : { 1'b0, Ird[11:9]};       // xltate 0,1-7 into 8,1-7
 
     always_comb begin
         unique case (1'b1)
-            lineOnehot[4'h6], // Bcc short
-            lineOnehot[4'h7]: // MOVEQ
-                ftuConst = { {8{ird[7]}}, ird[7:0] };
+            IrdL[4'h6], // Bcc short
+            IrdL[4'h7]: // MOVEQ
+                ftuConst = { {8{Ird[7]}}, Ird[7:0] };
 
             // ADDQ/SUBQ/static shift double check this
-            lineOnehot[4'h5],
-            lineOnehot[4'hE]:
+            IrdL[4'h5],
+            IrdL[4'hE]:
                 ftuConst = { 12'h000, zero28};
 
             // MULU/MULS DIVU/DIVS
-            lineOnehot[4'h8],
-            lineOnehot[4'hC]:
+            IrdL[4'h8],
+            IrdL[4'hC]:
                 ftuConst = 16'h000F;
 
-            lineOnehot[4'h4]: // TAS
+            // TAS
+            IrdL[4'h4]:
                 ftuConst = 16'h0080;
 
             default:
@@ -1125,15 +1141,15 @@ module irdDecode
     //
 
     always_comb begin
-        if (lineOnehot[4'h4]) begin
-            case (ird[6:5])
+        if (IrdL[4'h4]) begin
+            case (Ird[6:5])
                 2'b00,
                 2'b01:
                     Irdecod.macroTvn = 6'h6;                // CHK
                 2'b11:
                     Irdecod.macroTvn = 6'h7;                // TRAPV
                 2'b10:
-                    Irdecod.macroTvn = { 2'b10, ird[3:0] }; // TRAP
+                    Irdecod.macroTvn = { 2'b10, Ird[3:0] }; // TRAP
             endcase
         end
         else begin
@@ -1142,16 +1158,16 @@ module irdDecode
     end
 
 
-    wire eaAdir = (ird[ 5:3] == 3'b001);
-    wire size11 = ird[7] & ird[6];
+    wire eaAdir = (Ird[ 5:3] == 3'b001);
+    wire size11 = Ird[7] & Ird[6];
 
     // Opcodes variants that don't affect flags
     // ADDA/SUBA ADDQ/SUBQ MOVEA
 
     assign Irdecod.inhibitCcr =
-        ( (lineOnehot[9] | lineOnehot['hd]) & size11) |             // ADDA/SUBA
-        ( lineOnehot[5] & eaAdir) |                                 // ADDQ/SUBQ to An (originally checks for line[4] as well !?)
-        ( (lineOnehot[2] | lineOnehot[3]) & ird[8:6] == 3'b001);    // MOVEA
+        ( (IrdL[4'h9] | IrdL[4'hD]) & size11) |            // ADDA/SUBA
+        ( IrdL[4'h5] & eaAdir) |                           // ADDQ/SUBQ to An (originally checks for line[4] as well !?)
+        ( (IrdL[4'h2] | IrdL[4'h3]) & Ird[8:6] == 3'b001); // MOVEA
 
 endmodule
 
@@ -1855,39 +1871,29 @@ endmodule
 module uaddrDecode
 (
     input             [15:0] opcode,
+    input             [15:0] opline,
+    input              [3:0] ea1,
+    input              [3:0] ea2,
     output [UADDR_WIDTH-1:0] a1,
     output [UADDR_WIDTH-1:0] a2,
     output [UADDR_WIDTH-1:0] a3,
     output logic             isPriv,
     output logic             isIllegal,
     output logic             isLineA,
-    output logic             isLineF,
-    output            [15:0] lineBmap
+    output logic             isLineF
 );
-
-    wire [3:0] line = opcode[15:12];
-    logic [3:0] eaCol, movEa;
-
-    onehotEncoder4 irLineDecod( line, lineBmap);
-
-    assign isLineA = lineBmap[ 'hA];
-    assign isLineF = lineBmap[ 'hF];
 
     uaddrPla U_uaddrPla
     (
-        .movEa    (movEa),
-        .col      (eaCol),
+        .movEa    (ea2),
+        .col      (ea1),
         .opcode   (opcode),
-        .lineBmap (lineBmap),
+        .lineBmap (opline),
         .palIll   (isIllegal),
         .plaA1    (a1),
         .plaA2    (a2),
         .plaA3    (a3)
     );
-
-    // ea decoding
-    assign eaCol = eaDecode( opcode[ 5:0]);
-    assign movEa = eaDecode( {opcode[ 8:6], opcode[ 11:9]} );
 
     /*
     Privileged instructions:
@@ -1901,32 +1907,27 @@ module uaddrDecode
     */
 
     always_comb begin
-        unique case (lineBmap)
+        unique case (1'b1)
 
-        // ori/andi/eori SR
-        'h01:   isPriv = ((opcode & 16'hf5ff) == 16'h007c);
+            // ANDI/EORI/ORI SR
+            opline[0]:
+                isPriv = ((opcode[11:0] & 12'h5FF) == 12'h07C) ? 1'b1 : 1'b0;
 
-        'h10:
-            begin
-            // No priority !!!
-                if ((opcode & 16'hffc0) == 16'h46c0)        // move to sr
-                    isPriv = 1'b1;
+            opline[4]:
+                isPriv = ((opcode[11:0] & 12'hFC0) == 12'h6C0) // MOVE to SR
+                      || ((opcode[11:0] & 12'hFF0) == 12'hE60) // MOVE to/from USP
+                      || ((opcode[11:0] & 12'hFFF) == 12'hE70) // RESET
+                      || ((opcode[11:0] & 12'hFFF) == 12'hE72) // STOP
+                      || ((opcode[11:0] & 12'hFFF) == 12'hE73) // RTE
+                      ? 1'b1 : 1'b0;
 
-                else if ((opcode & 16'hfff0) == 16'h4e60)   // move usp
-                    isPriv = 1'b1;
-
-                else if (   opcode == 16'h4e70 ||           // reset
-                            opcode == 16'h4e73 ||           // rte
-                            opcode == 16'h4e72)             // stop
-                    isPriv = 1'b1;
-                else
-                    isPriv = 1'b0;
-            end
-
-        default:   isPriv = 1'b0;
+            default:
+                isPriv = 1'b0;
         endcase
     end
 
+    assign isLineA = opline[4'hA];
+    assign isLineF = opline[4'hF];
 
 endmodule
 
