@@ -55,29 +55,78 @@ module fx68k
     wire wClk;
 
     // Internal sub clocks T1-T4
-    enum int unsigned { T0 = 0, T1, T2, T3, T4} tState;
-    wire enT1 = Clks.enPhi1 & (tState == T4) & ~wClk;
-    wire enT2 = Clks.enPhi2 & (tState == T1);
-    wire enT3 = Clks.enPhi1 & (tState == T2);
-    wire enT4 = Clks.enPhi2 & ((tState == T0) | (tState == T3));
+    localparam
+        T0 = 0,
+        T1 = 1,
+        T2 = 2,
+        T3 = 3,
+        T4 = 4;
+    reg [4:0] tState;
 
     // T4 continues ticking during reset and group0 exception.
     // We also need it to erase ucode output latched on T4.
     always_ff @(posedge clk) begin
 
         if (Clks.pwrUp) begin
-            tState <= T0;
+            tState <= 5'b00001; // T0
         end
         else begin
-            case (tState)
-                T0: if (Clks.enPhi2) tState <= T4;
-                T1: if (Clks.enPhi2) tState <= T2;
-                T2: if (Clks.enPhi1) tState <= T3;
-                T3: if (Clks.enPhi2) tState <= T4;
-                T4: if (Clks.enPhi1) tState <= wClk ? T0 : T1;
+            tState <= 5'b00000;
+            case (1'b1)
+                tState[T0]:
+                begin
+                    if (Clks.enPhi2) begin
+                        tState[T4] <= 1'b1;
+                    end
+                    else begin
+                        tState[T0] <= 1'b1;
+                    end
+                end
+                tState[T1]:
+                begin
+                    if (Clks.enPhi2) begin
+                        tState[T2] <= 1'b1;
+                    end
+                    else begin
+                        tState[T1] <= 1'b1;
+                    end
+                end
+                tState[T2]:
+                begin
+                    if (Clks.enPhi1) begin
+                        tState[T3] <= 1'b1;
+                    end
+                    else begin
+                        tState[T2] <= 1'b1;
+                    end
+                end
+                tState[T3]:
+                begin
+                    if (Clks.enPhi2) begin
+                        tState[T4] <= 1'b1;
+                    end
+                    else begin
+                        tState[T3] <= 1'b1;
+                    end
+                end
+                tState[T4]:
+                begin
+                    if (Clks.enPhi1) begin
+                        tState[T0] <= wClk;
+                        tState[T1] <= ~wClk;
+                    end
+                    else begin
+                        tState[T4] <= 1'b1;
+                    end
+                end
             endcase
         end
     end
+
+    wire enT1 = Clks.enPhi1 & tState[T4] & ~wClk;
+    wire enT2 = Clks.enPhi2 & tState[T1];
+    wire enT3 = Clks.enPhi1 & tState[T2];
+    wire enT4 = Clks.enPhi2 & (tState[T0] | tState[T3]);
 
     // The following signals are synchronized with 3 couplers, phi1-phi2-phi1.
     // Will be valid internally one cycle later if changed at the rasing edge of the clock.
