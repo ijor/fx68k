@@ -77,6 +77,7 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
     localparam CF = 0, VF = 1, ZF = 2, NF = 3, XF = 4;
 
     reg [15:0] aluLatch;
+    reg  [7:0] addLatch;
     reg [4:0] pswCcr;
     reg [4:0] ccrCore;
 
@@ -84,9 +85,9 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
     logic [4:0] ccrTemp;
     reg coreH;      // half carry latch
 
-    logic [15:0] subResult;
-    logic subHcarry;
-    logic subCout, subOv;
+    logic [15:0] addResult;
+    logic addHcarry;
+    logic addCout, addOv;
 
     assign aluOut = aluLatch;
     assign ze = ~ccrCore[ ZF];      // Check polarity !!!
@@ -134,7 +135,7 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
     logic shftCin, shftRight, addCin;
 
     // Register some decoded signals
-    always_ff @( posedge clk) begin
+    always_ff @(posedge clk) begin
     
         if (enT3) begin
             row     <= cRow;
@@ -185,7 +186,7 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
     wire bcdC, bcdV;
     aluCorf aluCorf
     (
-        .binResult (aluLatch[7:0]),
+        .binResult (addLatch),
         .hCarry    (coreH),
         .bAdd      (~oper[0]),
         .cin       (pswCcr[XF]),
@@ -249,8 +250,8 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
     always_comb begin
 
         // sub is DATA - ADDR
-        mySubber( aOperand, dOperand, addCin, ~oper[0],
-            isByte, subResult, subCout, subOv);
+        myAdder( aOperand, dOperand, addCin, ~oper[0],
+            isByte, addResult, addCout, addOv);
 
         isShift = oper[4];
         
@@ -277,7 +278,7 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
             OP_ADDX,
             OP_SUBX:
             begin
-                result = subResult;
+                result = addResult;
             end
             
             //OP_ASL,
@@ -296,9 +297,9 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
         endcase
     end
 
-    task mySubber;
+    task myAdder;
         input [15:0] inpa, inpb;
-        input cin, bAdd, isByte;
+        input cin, bSub, isByte;
         output reg [15:0] result;
         output cout, ov;
 
@@ -308,7 +309,7 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
 
         begin
             rtemp = { 1'b0, inpb, cin }
-                  + { 1'b0, inpa ^ {16{~bAdd}}, cin };
+                  + { 1'b0, inpa ^ {16{bSub}}, cin };
             if (isByte)
             begin
                 result = { {8{ rtemp[8]}}, rtemp[8:1] };
@@ -322,12 +323,12 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
             rm  = isByte ? rtemp[8] : rtemp[16];
             dm  = isByte ? inpb[ 7] : inpb[ 15];
             tsm = isByte ? inpa[ 7] : inpa[ 15];
-            sm  = bAdd ? tsm : ~tsm;
+            sm  = bSub ? ~tsm : tsm;
 
             ov = (sm & dm & ~rm) | (~sm & ~dm & rm);
 
             // Store half carry for bcd correction
-            subHcarry = inpa[4] ^ inpb[4] ^ rtemp[5];
+            addHcarry = inpa[4] ^ inpb[4] ^ rtemp[5];
         end
     endtask
 
@@ -394,9 +395,9 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
             OP_SUBC,
             OP_SUBX:
             begin
-                ccrTemp[CF] = subCout;
-                ccrTemp[XF] = subCout;
-                ccrTemp[VF] = subOv;
+                ccrTemp[CF] = addCout;
+                ccrTemp[XF] = addCout;
+                ccrTemp[VF] = addOv;
             end
 
             OP_LSL,
@@ -477,8 +478,9 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
             // Update latches from ALU operators
             if ((| aluColumn)) begin
                 aluLatch <= result;
+                addLatch <= addResult[7:0];
 
-                coreH <= subHcarry;
+                coreH <= addHcarry;
 
                 // Update CCR core
                 if ((| aluColumn))
