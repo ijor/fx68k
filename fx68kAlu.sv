@@ -250,7 +250,7 @@ module fx68kAlu ( input clk, pwrUp, enT1, enT3, enT4,
     always_comb begin
 
         // sub is DATA - ADDR
-        myAdder( aOperand, dOperand, addCin, ~oper[0],
+        myAdder( aOperand, dOperand, addCin, oper[0],
             isByte, addResult, addCout, addOv);
 
         isShift = oper[4];
