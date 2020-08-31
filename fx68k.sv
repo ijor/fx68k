@@ -388,11 +388,11 @@ module fx68k
         .clk,
         .Clks,
         .enT1, .enT2, .enT3, .enT4,
-        .iNanoDec_t4 (wNanoDec_t4),
-        .iNanoDec_t3 (wNanoDec_t3),
-        .Irdecod     (wIrdDecode_t1),
-        .Ird         (rIrd_t1),
-        .iFtu_t3     (rFtu_t3), 
+        .iNanoDec_t4   (wNanoDec_t4),
+        .iNanoDec_t3   (wNanoDec_t3),
+        .iIrdDecode_t1 (wIrdDecode_t1),
+        .Ird           (rIrd_t1),
+        .iFtu_t3       (rFtu_t3), 
         .iEdb, .pswS,
         .prenEmpty, .au05z, .dcr4, .ze,
         .oAbl_t2     (wAbl_t2),
@@ -1260,7 +1260,7 @@ module excUnit
     input enT1, enT2, enT3, enT4,
     input s_nanod_r iNanoDec_t4,
     input s_nanod_w iNanoDec_t3,
-    input s_irdecod Irdecod,
+    input s_irdecod iIrdDecode_t1,
     input [15:0] Ird,           // ALU row (and others) decoder needs it
     input pswS,
     input [15:0] iFtu_t3,
@@ -1332,7 +1332,9 @@ localparam
 
     // RX RY muxes
     // RX and RY actual registers
-    logic [3:0] movemRx;
+    reg  [3:0] rMovemRx_t3;
+    reg        rRxIsMovem_t3;
+    reg        rMovemRxIsSp_t3;
     logic byteNotSpAlign;           // Byte instruction and no sp word align
 
     // IRD decoded signals must be latched. See comments on decoder
@@ -1340,82 +1342,110 @@ localparam
     //
     // If we need this earlier we can register IRD decode on T3 and use nano async
 
-    logic [4:0] rxMux, ryMux;
-    logic [3:0] rxReg, ryReg;
-    logic rxIsSp, ryIsSp;
+    reg   [4:0] rRxMux_t3;
+    reg         rRxIsSp_t3;
 
-    always_comb begin
-
-        // Unique IF !!
-        if (iNanoDec_t3.ssp) begin
-            rxMux  = REG_SSP[4:0];
-            rxIsSp = 1'b1;
-            rxReg  = 4'hX;
-        end
-        else if (Irdecod.rxIsUsp) begin
-            rxMux  = REG_USP[4:0];
-            rxIsSp = 1'b1;
-            rxReg  = 4'hX;
-        end
-        else if (Irdecod.rxIsDt & !Irdecod.implicitSp) begin
-            rxMux  = REG_DT[4:0];
-            rxIsSp = 1'b0;
-            rxReg  = 4'hX;
-        end
-        else begin
-            if (Irdecod.implicitSp)
-                rxReg = REG_USP[3:0];
-            else if (Irdecod.rxIsMovem)
-                rxReg = movemRx;
-            else
-                rxReg = { Irdecod.rxIsAreg, Irdecod.rx};
-
-            if (&rxReg) begin
-                rxMux  = pswS ? REG_SSP[4:0] : REG_USP[4:0];
-                rxIsSp = 1'b1;
+    reg   [4:0] rRyMux_t3;
+    reg         rRyIsSp_t3;
+    
+    // Pre-computation for wRxMux_t3 and wRyMux_t3
+    always_ff @(posedge clk) begin
+        reg [3:0] vTmp;
+    
+        if (enT3) begin
+            if (iIrdDecode_t1.rxIsUsp) begin
+                rRxMux_t3  <= REG_USP[4:0];
+                rRxIsSp_t3 <= 1'b1;
+            end
+            else if (iIrdDecode_t1.implicitSp) begin
+                rRxMux_t3  <= (pswS) ? REG_SSP[4:0] : REG_USP[4:0];
+                rRxIsSp_t3 <= 1'b1;
+            end
+            else if (iIrdDecode_t1.rxIsDt) begin
+                rRxMux_t3  <= REG_DT[4:0];
+                rRxIsSp_t3 <= 1'b0;
+            end
+            else if (!iIrdDecode_t1.rxIsMovem) begin
+                vTmp = { iIrdDecode_t1.rxIsAreg, iIrdDecode_t1.rx};
+                if (&vTmp) begin
+                    rRxMux_t3  <= (pswS) ? REG_SSP[4:0] : { 1'b0, vTmp };
+                    rRxIsSp_t3 <= 1'b1;
+                end
+                else begin
+                    rRxMux_t3  <= { 1'b0, vTmp };
+                    rRxIsSp_t3 <= 1'b0;
+                end
+            end
+            
+            if (iIrdDecode_t1.ryIsDt) begin
+                rRyMux_t3  <= REG_DT[4:0];
+                rRyIsSp_t3 <= 1'b0;
             end
             else begin
-                rxMux  = { 1'b0, rxReg};
-                rxIsSp = 1'b0;
+                vTmp = { iIrdDecode_t1.ryIsAreg, iIrdDecode_t1.ry };
+                if (&vTmp) begin
+                    rRyMux_t3  <= (pswS) ? REG_SSP[4:0] : { 1'b0, vTmp };
+                    rRyIsSp_t3 <= 1'b1;
+                end
+                else begin
+                    rRyMux_t3  <= { 1'b0, vTmp };
+                    rRyIsSp_t3 <= 1'b0;
+                end
             end
         end
+    end
+    
+    logic [4:0] wRxMux_t3;
+    logic       wRxIsSp_t3;
 
-        // RZ has higher priority!
-        if (Irdecod.ryIsDt & !iNanoDec_t3.rz) begin
-            ryMux  = REG_DT[4:0];
-            ryIsSp = 1'b0;
-            ryReg  = 4'hX;
+    logic [4:0] wRyMux_t3;
+    logic       wRyIsSp_t3;
+
+    always_comb begin : RX_IDX_T3
+        if (iNanoDec_t3.ssp) begin
+            wRxMux_t3  = REG_SSP[4:0];
+            wRxIsSp_t3 = 1'b1;
+        end
+        else if (rRxIsMovem_t3) begin
+            wRxMux_t3  = (pswS & rMovemRxIsSp_t3) ? REG_SSP[4:0] : { 1'b0, rMovemRx_t3 };
+            wRxIsSp_t3 = rMovemRxIsSp_t3;
         end
         else begin
-            ryReg = iNanoDec_t3.rz ? oIrc_t4[15:12] : {Irdecod.ryIsAreg, Irdecod.ry};
-            ryIsSp = (& ryReg);
-            if (ryIsSp & pswS)          // No implicit SP on RY
-                ryMux = REG_SSP[4:0];
-            else
-                ryMux = { 1'b0, ryReg};
+            wRxMux_t3  = rRxMux_t3;
+            wRxIsSp_t3 = rRxIsSp_t3;
         end
-
     end
 
-    reg [4:0] rActualRx_t4;
-    reg [4:0] rActualRy_t4;
-    reg       rRxIsAreg_t4;
-    reg       rRyIsAreg_t4;
+    always_comb begin : RY_IDX_T3
+        if (iNanoDec_t3.rz) begin
+            wRyIsSp_t3 = &oIrc_t4[15:12];
+            if (wRyIsSp_t3 & pswS)
+                wRyMux_t3 = REG_SSP[4:0];
+            else
+                wRyMux_t3 = { 1'b0, oIrc_t4[15:12] };
+        end
+        else begin
+            wRyMux_t3  = rRyMux_t3;
+            wRyIsSp_t3 = rRyIsSp_t3;
+        end
+    end
+
+    wire [31:0] wRx_t4;
+    wire [31:0] wRy_t4;
+    reg         rRxIsAreg_t4;
+    reg         rRyIsAreg_t4;
     
-    reg       rAbdIsByte_t4;
+    reg         rAbdIsByte_t4;
 
     always_ff @(posedge clk) begin
     
         if (enT4) begin
-            byteNotSpAlign <= Irdecod.isByte & ~(iNanoDec_t3.rxlDbl ? rxIsSp : ryIsSp);
+            byteNotSpAlign <= iIrdDecode_t1.isByte & ~(iNanoDec_t3.rxlDbl ? wRxIsSp_t3 : wRyIsSp_t3);
 
-            rActualRx_t4 <= rxMux;
-            rActualRy_t4 <= ryMux;
+            rRxIsAreg_t4 <= wRxIsSp_t3 | wRxMux_t3[3];
+            rRyIsAreg_t4 <= wRyIsSp_t3 | wRyMux_t3[3];
 
-            rRxIsAreg_t4 <= rxIsSp | rxMux[3];
-            rRyIsAreg_t4 <= ryIsSp | ryMux[3];
-
-            rAbdIsByte_t4 <= iNanoDec_t3.abdIsByte & Irdecod.isByte;
+            rAbdIsByte_t4 <= iNanoDec_t3.abdIsByte & iIrdDecode_t1.isByte;
         end
     end
 
@@ -1450,8 +1480,8 @@ localparam
 
     always_comb begin : BUS_MUXES_T4
         unique case (1'b1)
-            wRyl2Dbd_t4:          { wDbdIdle_t4, wDbdMux_t4 } = { 1'b0, regs68L[rActualRy_t4] };
-            wRxl2Dbd_t4:          { wDbdIdle_t4, wDbdMux_t4 } = { 1'b0, regs68L[rActualRx_t4] };
+            wRxl2Dbd_t4:          { wDbdIdle_t4, wDbdMux_t4 } = { 1'b0, wRx_t4[15:0] };
+            wRyl2Dbd_t4:          { wDbdIdle_t4, wDbdMux_t4 } = { 1'b0, wRy_t4[15:0] };
             iNanoDec_t4.alue2Dbd: { wDbdIdle_t4, wDbdMux_t4 } = { 1'b0, alue };
             iNanoDec_t4.dbin2Dbd: { wDbdIdle_t4, wDbdMux_t4 } = { 1'b0, wDbin_t4 };
             iNanoDec_t4.alu2Dbd:  { wDbdIdle_t4, wDbdMux_t4 } = { 1'b0, aluOut };
@@ -1460,8 +1490,8 @@ localparam
         endcase
 
         unique case (1'b1)
-            wRxl2Dbl_t4:          { wDblIdle_t4, wDblMux_t4 } = { 1'b0, regs68L[rActualRx_t4] };
-            wRyl2Dbl_t4:          { wDblIdle_t4, wDblMux_t4 } = { 1'b0, regs68L[rActualRy_t4] };
+            wRxl2Dbl_t4:          { wDblIdle_t4, wDblMux_t4 } = { 1'b0, wRx_t4[15:0] };
+            wRyl2Dbl_t4:          { wDblIdle_t4, wDblMux_t4 } = { 1'b0, wRy_t4[15:0] };
             iNanoDec_t4.ftu2Dbl:  { wDblIdle_t4, wDblMux_t4 } = { 1'b0, iFtu_t3 };
             iNanoDec_t4.au2Db:    { wDblIdle_t4, wDblMux_t4 } = { 1'b0, rAuReg_t3[15:0] };
             iNanoDec_t4.atl2Dbl:  { wDblIdle_t4, wDblMux_t4 } = { 1'b0, rAtl_t3 };
@@ -1470,8 +1500,8 @@ localparam
         endcase
 
         unique case (1'b1)
-            iNanoDec_t4.rxh2dbh:  { wDbhIdle_t4, wDbhMux_t4 } = { 1'b0, regs68H[rActualRx_t4] };
-            iNanoDec_t4.ryh2dbh:  { wDbhIdle_t4, wDbhMux_t4 } = { 1'b0, regs68H[rActualRy_t4] };
+            iNanoDec_t4.rxh2dbh:  { wDbhIdle_t4, wDbhMux_t4 } = { 1'b0, wRx_t4[31:16] };
+            iNanoDec_t4.ryh2dbh:  { wDbhIdle_t4, wDbhMux_t4 } = { 1'b0, wRy_t4[31:16] };
             iNanoDec_t4.au2Db:    { wDbhIdle_t4, wDbhMux_t4 } = { 1'b0, rAuReg_t3[31:16] };
             iNanoDec_t4.ath2Dbh:  { wDbhIdle_t4, wDbhMux_t4 } = { 1'b0, rAth_t3 };
             rPch2Dbh_t4:          { wDbhIdle_t4, wDbhMux_t4 } = { 1'b0, PcH };
@@ -1479,8 +1509,8 @@ localparam
         endcase
 
         unique case (1'b1)
-            wRyl2Abd_t4:          { wAbdIdle_t4, wAbdMux_t4 } = { 1'b0, regs68L[rActualRy_t4] };
-            wRxl2Abd_t4:          { wAbdIdle_t4, wAbdMux_t4 } = { 1'b0, regs68L[rActualRx_t4] };
+            wRxl2Abd_t4:          { wAbdIdle_t4, wAbdMux_t4 } = { 1'b0, wRx_t4[15:0] };
+            wRyl2Abd_t4:          { wAbdIdle_t4, wAbdMux_t4 } = { 1'b0, wRy_t4[15:0] };
             iNanoDec_t4.dbin2Abd: { wAbdIdle_t4, wAbdMux_t4 } = { 1'b0, wDbin_t4 };
             iNanoDec_t4.alu2Abd:  { wAbdIdle_t4, wAbdMux_t4 } = { 1'b0, aluOut };
             default:              { wAbdIdle_t4, wAbdMux_t4 } = { 1'b1, 16'h0000 };
@@ -1488,8 +1518,8 @@ localparam
 
         unique case (1'b1)
             rPcl2Abl_t4:          { wAblIdle_t4, wAblMux_t4 } = { 1'b0, PcL };
-            wRxl2Abl_t4:          { wAblIdle_t4, wAblMux_t4 } = { 1'b0, regs68L[rActualRx_t4] };
-            wRyl2Abl_t4:          { wAblIdle_t4, wAblMux_t4 } = { 1'b0, regs68L[rActualRy_t4] };
+            wRxl2Abl_t4:          { wAblIdle_t4, wAblMux_t4 } = { 1'b0, wRx_t4[15:0] };
+            wRyl2Abl_t4:          { wAblIdle_t4, wAblMux_t4 } = { 1'b0, wRy_t4[15:0] };
             iNanoDec_t4.ftu2Abl:  { wAblIdle_t4, wAblMux_t4 } = { 1'b0, iFtu_t3 };
             iNanoDec_t4.au2Ab:    { wAblIdle_t4, wAblMux_t4 } = { 1'b0, rAuReg_t3[15:0] };
             iNanoDec_t4.aob2Ab:   { wAblIdle_t4, wAblMux_t4 } = { 1'b0, aob[15:0] };
@@ -1499,8 +1529,8 @@ localparam
 
         unique case (1'b1)
             rPch2Abh_t4:          { wAbhIdle_t4, wAbhMux_t4 } = { 1'b0, PcH };
-            iNanoDec_t4.rxh2abh:  { wAbhIdle_t4, wAbhMux_t4 } = { 1'b0, regs68H[rActualRx_t4] };
-            iNanoDec_t4.ryh2abh:  { wAbhIdle_t4, wAbhMux_t4 } = { 1'b0, regs68H[rActualRy_t4] };
+            iNanoDec_t4.rxh2abh:  { wAbhIdle_t4, wAbhMux_t4 } = { 1'b0, wRx_t4[31:16] };
+            iNanoDec_t4.ryh2abh:  { wAbhIdle_t4, wAbhMux_t4 } = { 1'b0, wRy_t4[31:16] };
             iNanoDec_t4.au2Ab:    { wAbhIdle_t4, wAbhMux_t4 } = { 1'b0, rAuReg_t3[31:16] };
             iNanoDec_t4.aob2Ab:   { wAbhIdle_t4, wAbhMux_t4 } = { 1'b0, aob[31:16] };
             iNanoDec_t4.ath2Abh:  { wAbhIdle_t4, wAbhMux_t4 } = { 1'b0, rAth_t3 };
@@ -1652,31 +1682,42 @@ localparam
                         ? ((iNanoDec_t4.dbl2ryl) ? rDbl_t2 : rAbl_t2)
                         : ((iNanoDec_t4.dbl2ryl) ? rDbd_t2 : rAbd_t2);
 
-    always_ff @(posedge clk) begin : REGS_WRITE_T3
-        reg [2:0] vRxWEna;
-        reg [2:0] vRyWEna;
+    reg   [3:0] rRxWEna_t2;
+    reg   [3:0] rRyWEna_t2;
         
-        vRxWEna[2] <= iNanoDec_t4.dbh2rxh | iNanoDec_t4.abh2rxh;
-        vRxWEna[1] <= iNanoDec_t4.dbl2rxl | iNanoDec_t4.abl2rxl & (~rAbdIsByte_t4 | rRxIsAreg_t4);
-        vRxWEna[0] <= iNanoDec_t4.dbl2rxl | iNanoDec_t4.abl2rxl;
-
-        vRyWEna[2] <= iNanoDec_t4.dbh2ryh | iNanoDec_t4.abh2ryh;
-        vRyWEna[1] <= iNanoDec_t4.dbl2ryl | iNanoDec_t4.abl2ryl & (~rAbdIsByte_t4 | rRyIsAreg_t4);
-        vRyWEna[0] <= iNanoDec_t4.dbl2ryl | iNanoDec_t4.abl2ryl;
+    always_ff @(posedge clk) begin : REGS_WRENA_T2
         
-        if (enT3) begin
-            if (vRxWEna[2]) regs68H[rActualRx_t4][15:0] <= wRxh_t2[15:0];
-            if (vRxWEna[1]) regs68L[rActualRx_t4][15:8] <= wRxl_t2[15:8];
-            if (vRxWEna[0]) regs68L[rActualRx_t4][ 7:0] <= wRxl_t2[ 7:0];
+        if (enT2) begin
+            rRxWEna_t2[3] <= iNanoDec_t4.dbh2rxh | iNanoDec_t4.abh2rxh;
+            rRxWEna_t2[2] <= iNanoDec_t4.dbh2rxh | iNanoDec_t4.abh2rxh;
+            rRxWEna_t2[1] <= iNanoDec_t4.dbl2rxl | iNanoDec_t4.abl2rxl & (~rAbdIsByte_t4 | rRxIsAreg_t4);
+            rRxWEna_t2[0] <= iNanoDec_t4.dbl2rxl | iNanoDec_t4.abl2rxl;
             
-            if (vRyWEna[2]) regs68H[rActualRy_t4][15:0] <= wRyh_t2[15:0];
-            if (vRyWEna[1]) regs68L[rActualRy_t4][15:8] <= wRyl_t2[15:8];
-            if (vRyWEna[0]) regs68L[rActualRy_t4][ 7:0] <= wRyl_t2[ 7:0];
-            `ifdef verilator3
-            if ((|vRxWEna) & (|vRyWEna)) $display("68k regs : concurrent write !!");
-            `endif
+            rRyWEna_t2[3] <= iNanoDec_t4.dbh2ryh | iNanoDec_t4.abh2ryh;
+            rRyWEna_t2[2] <= iNanoDec_t4.dbh2ryh | iNanoDec_t4.abh2ryh;
+            rRyWEna_t2[1] <= iNanoDec_t4.dbl2ryl | iNanoDec_t4.abl2ryl & (~rAbdIsByte_t4 | rRyIsAreg_t4);
+            rRyWEna_t2[0] <= iNanoDec_t4.dbl2ryl | iNanoDec_t4.abl2ryl;
         end
     end
+    
+    
+    fx68kRegs U_fx68kRegs
+    (
+        .clk        (clk),
+        .clk_ena    (enT3 | enT4),
+        
+        .iRxAddr    (wRxMux_t3),
+        .iRxWrEna   (enT3),
+        .iRxByteEna (rRxWEna_t2),
+        .iRxWrData  ({ wRxh_t2[15:0], wRxl_t2[15:0] }),
+        .oRxRdData  (wRx_t4),
+        
+        .iRyAddr    (wRyMux_t3),
+        .iRyWrEna   (enT3),
+        .iRyByteEna (rRyWEna_t2),
+        .iRyWrData  ({ wRyh_t2[15:0], wRyl_t2[15:0] }),
+        .oRyRdData  (wRy_t4)
+    );
 
     // PC & AT
     reg  rDbl2Pcl_t4;
@@ -1770,7 +1811,12 @@ localparam
             prenLatch <= wDbin_t4;
         else if (enT3 & iNanoDec_t4.updPren) begin
             prenLatch [prHbit] <= 1'b0;
-            movemRx <= Irdecod.movemPreDecr ? ~prHbit : prHbit;
+            rMovemRx_t3     <= prHbit ^ {4{iIrdDecode_t1.movemPreDecr}};
+            rMovemRxIsSp_t3 <= (prHbit == {4{~iIrdDecode_t1.movemPreDecr}}) ? 1'b1 : 1'b0;
+        end
+        
+        if (enT3) begin
+            rRxIsMovem_t3 <= iIrdDecode_t1.rxIsMovem;
         end
     end
 
@@ -1825,7 +1871,7 @@ localparam
         .clk, .Clks, .enT1, .enT2, .enT3, .enT4,
         .iNanoDec_t4 (iNanoDec_t4),
         .iNanoDec_t3 (iNanoDec_t3),
-        .Irdecod,
+        .iIsByte_t1  (iIrdDecode_t1.isByte),
         .iEdb, .dobIdle, .dobInput, .aob0,
         .oIrc_t4     (oIrc_t4),
         .oDbin_t4    (wDbin_t4),
@@ -1842,7 +1888,7 @@ localparam
         .ftu2Ccr     (iNanoDec_t3.ftu2Ccr),
         .init        (iNanoDec_t3.aluInit),
         .finish      (iNanoDec_t3.aluFinish),
-        .aluIsByte   (Irdecod.isByte),
+        .aluIsByte   (iIrdDecode_t1.isByte),
         .alub        (rAlub_t3),
         .ftu         (iFtu_t3), 
         .alueClkEn,
@@ -1853,6 +1899,139 @@ localparam
         .oAluOut     (aluOut),
         .oCcr        (ccr)
     );
+
+endmodule
+
+module fx68kRegs
+(
+    input         clk,
+    input         clk_ena,
+    
+    input   [4:0] iRxAddr,
+    input         iRxWrEna,
+    input   [3:0] iRxByteEna,
+    input  [31:0] iRxWrData,
+    output [31:0] oRxRdData,
+    
+    input   [4:0] iRyAddr,
+    input         iRyWrEna,
+    input   [3:0] iRyByteEna,
+    input  [31:0] iRyWrData,
+    output [31:0] oRyRdData
+);
+
+`ifdef verilator3
+
+    // Inferred block RAM
+    reg [31:0] rRam [0:31];
+    
+    always_ff @(posedge clk) begin : RX_WRITE
+    
+        if (clk_ena & iRxWrEna) begin
+            if (iRxByteEna[3]) rRam[iRxAddr][31:24] <= iRxWrData[31:24];
+            if (iRxByteEna[2]) rRam[iRxAddr][23:16] <= iRxWrData[23:16];
+            if (iRxByteEna[1]) rRam[iRxAddr][15: 8] <= iRxWrData[15: 8];
+            if (iRxByteEna[0]) rRam[iRxAddr][ 7: 0] <= iRxWrData[ 7: 0];
+        end
+    end
+    
+    reg [31:0] rRxRdData;
+    
+    always_ff @(posedge clk) begin : RX_READ
+    
+        if (clk_ena) begin
+            rRxRdData <= rRam[iRxAddr];
+        end
+    end
+    
+    assign oRxRdData = rRxRdData;
+
+    always_ff @(posedge clk) begin : RY_WRITE
+    
+        if (clk_ena & iRyWrEna) begin
+            if (iRyByteEna[3]) rRam[iRyAddr][31:24] <= iRyWrData[31:24];
+            if (iRyByteEna[2]) rRam[iRyAddr][23:16] <= iRyWrData[23:16];
+            if (iRyByteEna[1]) rRam[iRyAddr][15: 8] <= iRyWrData[15: 8];
+            if (iRyByteEna[0]) rRam[iRyAddr][ 7: 0] <= iRyWrData[ 7: 0];
+        end
+    end
+
+    reg [31:0] rRyRdData;
+    
+    always_ff @(posedge clk) begin : RY_READ
+    
+        if (clk_ena) begin
+            rRyRdData <= rRam[iRyAddr];
+        end
+    end
+    
+    assign oRyRdData = rRyRdData;
+
+`else
+
+    altsyncram U_altsyncram
+    (
+        // Clock & reset
+        .aclr0          (1'b0),
+        .aclr1          (1'b0),
+        .clock0         (clk),
+        .clock1         (1'b1),
+        .clocken0       (clk_ena),
+        .clocken1       (1'b1),
+        .clocken2       (1'b1),
+        .clocken3       (1'b1),
+        // Rx port
+        .rden_a         (1'b1),
+        .wren_a         (iRxWrEna),
+        .byteena_a      (iRxByteEna),
+        .address_a      (iRxAddr),
+        .addressstall_a (1'b0),
+        .data_a         (iRxWrData),
+        .q_a            (oRxRdData),
+        // Ry port
+        .rden_b         (1'b1),
+        .wren_b         (iRyWrEna),
+        .byteena_b      (iRyByteEna),
+        .address_b      (iRyAddr),
+        .addressstall_b (1'b0),
+        .data_b         (iRyWrData),
+        .q_b            (oRyRdData),
+        .eccstatus      ()
+    );
+	defparam
+        U_altsyncram.address_aclr_a            = "NONE",
+        U_altsyncram.address_aclr_b            = "NONE",
+        U_altsyncram.address_reg_b             = "CLOCK0",
+        U_altsyncram.byteena_aclr_a            = "NONE",
+        U_altsyncram.byteena_aclr_b            = "NONE",
+        U_altsyncram.byteena_reg_b             = "CLOCK0",
+        U_altsyncram.byte_size                 = 8,
+        U_altsyncram.indata_aclr_a             = "NONE",
+        U_altsyncram.indata_aclr_b             = "NONE",
+        U_altsyncram.indata_reg_b              = "CLOCK0",
+        U_altsyncram.intended_device_family    = "Stratix",
+        U_altsyncram.lpm_type                  = "altsyncram",
+        U_altsyncram.numwords_a                = 32,
+        U_altsyncram.numwords_b                = 32,
+        U_altsyncram.operation_mode            = "BIDIR_DUAL_PORT",
+        U_altsyncram.outdata_aclr_a            = "NONE",
+        U_altsyncram.outdata_aclr_b            = "NONE",
+        U_altsyncram.outdata_reg_a             = "UNREGISTERED",
+        U_altsyncram.outdata_reg_b             = "UNREGISTERED",
+        U_altsyncram.power_up_uninitialized    = "FALSE",
+        U_altsyncram.ram_block_type            = "M4K",
+        U_altsyncram.read_during_write_mode_mixed_ports = "DONT_CARE",
+        U_altsyncram.widthad_a                 = 5,
+        U_altsyncram.widthad_b                 = 5,
+        U_altsyncram.width_a                   = 32,
+        U_altsyncram.width_b                   = 32,
+        U_altsyncram.width_byteena_a           = 4,
+        U_altsyncram.width_byteena_b           = 4,
+        U_altsyncram.wrcontrol_aclr_a          = "NONE",
+        U_altsyncram.wrcontrol_aclr_b          = "NONE",
+        U_altsyncram.wrcontrol_wraddress_reg_b = "CLOCK0";
+        
+`endif
 
 endmodule
 
@@ -1875,7 +2054,7 @@ module dataIo
     input               enT4,
     input     s_nanod_r iNanoDec_t4,
     input     s_nanod_w iNanoDec_t3,
-    input     s_irdecod Irdecod,
+    input               iIsByte_t1,
     input        [15:0] iEdb,
     input               aob0,
 
@@ -1912,7 +2091,7 @@ module dataIo
         // Can't latch at T3, a new IRD might be loaded already at T1.
         // Ok to latch at T4 if combination latched then at T3
         if (enT4)
-            isByte_T4 <= Irdecod.isByte;    // Includes MOVEP from mem, we could OR it here
+            isByte_T4 <= iIsByte_t1;    // Includes MOVEP from mem, we could OR it here
 
         if (enT3) begin
             dbinNoHigh <= iNanoDec_t3.noHighByte;
@@ -1958,7 +2137,7 @@ module dataIo
         // Wait states don't affect DOB operation that is done at the start of the bus cycle.
 
         if (enT4)
-            byteCycle <= iNanoDec_t3.busByte & Irdecod.isByte;        // busIsByte but not MOVEP
+            byteCycle <= iNanoDec_t3.busByte & iIsByte_t1;        // busIsByte but not MOVEP
 
         // Originally byte low/high interconnect is done at EDB, not at DOB.
         if (enT3 & ~dobIdle) begin
@@ -2682,6 +2861,8 @@ module uRom
     output logic  [UROM_WIDTH-1:0] microOutput
 );
 
+`ifdef verilator3
+
     reg [UROM_WIDTH-1:0] uRam[0:UROM_DEPTH-1];
 
     initial begin
@@ -2691,6 +2872,51 @@ module uRom
     always_ff @(posedge clk) begin
         microOutput <= uRam[microAddr];
     end
+
+`else
+
+    altsyncram U_altsyncram
+    (
+        .clock0         (clk),
+        .address_a      (microAddr),
+        .q_a            (microOutput),
+        .aclr0          (1'b0),
+        .aclr1          (1'b0),
+        .address_b      (1'b1),
+        .addressstall_a (1'b0),
+        .addressstall_b (1'b0),
+        .byteena_a      (1'b1),
+        .byteena_b      (1'b1),
+        .clock1         (1'b1),
+        .clocken0       (1'b1),
+        .clocken1       (1'b1),
+        .clocken2       (1'b1),
+        .clocken3       (1'b1),
+        .data_a         ({UROM_WIDTH{1'b1}}),
+        .data_b         (1'b1),
+        .eccstatus      (),
+        .q_b            (),
+        .rden_a         (1'b1),
+        .rden_b         (1'b1),
+        .wren_a         (1'b0),
+        .wren_b         (1'b0)
+    );
+    defparam
+        U_altsyncram.address_aclr_a         = "NONE",
+        //U_altsyncram.clock_enable_input_a   = "BYPASS",
+        //U_altsyncram.clock_enable_output_a  = "BYPASS",
+        U_altsyncram.init_file              = "microrom.mif",
+        U_altsyncram.intended_device_family = "Stratix",
+        U_altsyncram.lpm_type               = "altsyncram",
+        U_altsyncram.numwords_a             = (1 << UADDR_WIDTH),
+        U_altsyncram.operation_mode         = "ROM",
+        U_altsyncram.outdata_aclr_a         = "NONE",
+        U_altsyncram.outdata_reg_a          = "UNREGISTERED",
+        U_altsyncram.widthad_a              = UADDR_WIDTH,
+        U_altsyncram.width_a                = UROM_WIDTH,
+        U_altsyncram.width_byteena_a        = 1;
+        
+`endif
 
 endmodule
 
@@ -2702,6 +2928,8 @@ module nanoRom
     output logic [NANO_WIDTH-1:0] nanoOutput
 );
 
+`ifdef verilator3
+
     reg [NANO_WIDTH-1:0] nRam[0:NANO_DEPTH-1];
 
     initial begin
@@ -2711,6 +2939,51 @@ module nanoRom
     always_ff @(posedge clk) begin
         nanoOutput <= nRam[nanoAddr];
     end
+
+`else
+
+    altsyncram U_altsyncram
+    (
+        .clock0         (clk),
+        .address_a      (nanoAddr),
+        .q_a            (nanoOutput),
+        .aclr0          (1'b0),
+        .aclr1          (1'b0),
+        .address_b      (1'b1),
+        .addressstall_a (1'b0),
+        .addressstall_b (1'b0),
+        .byteena_a      (1'b1),
+        .byteena_b      (1'b1),
+        .clock1         (1'b1),
+        .clocken0       (1'b1),
+        .clocken1       (1'b1),
+        .clocken2       (1'b1),
+        .clocken3       (1'b1),
+        .data_a         ({NANO_WIDTH{1'b1}}),
+        .data_b         (1'b1),
+        .eccstatus      (),
+        .q_b            (),
+        .rden_a         (1'b1),
+        .rden_b         (1'b1),
+        .wren_a         (1'b0),
+        .wren_b         (1'b0)
+    );
+    defparam
+        U_altsyncram.address_aclr_a         = "NONE",
+        //U_altsyncram.clock_enable_input_a   = "BYPASS",
+        //U_altsyncram.clock_enable_output_a  = "BYPASS",
+        U_altsyncram.init_file              = "nanorom.mif",
+        U_altsyncram.intended_device_family = "Stratix",
+        U_altsyncram.lpm_type               = "altsyncram",
+        U_altsyncram.numwords_a             = (1 << NADDR_WIDTH),
+        U_altsyncram.operation_mode         = "ROM",
+        U_altsyncram.outdata_aclr_a         = "NONE",
+        U_altsyncram.outdata_reg_a          = "UNREGISTERED",
+        U_altsyncram.widthad_a              = NADDR_WIDTH,
+        U_altsyncram.width_a                = NANO_WIDTH,
+        U_altsyncram.width_byteena_a        = 1;
+        
+`endif
 
 endmodule
 
