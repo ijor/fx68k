@@ -20,7 +20,7 @@ module uaddrPla
     input                   [15:0] opcode,
     input                   [15:0] lineBmap,
     
-    output                         palIll,
+    output                         plaIll,
     output logic [UADDR_WIDTH-1:0] plaA1,
     output logic [UADDR_WIDTH-1:0] plaA2,
     output logic [UADDR_WIDTH-1:0] plaA3
@@ -37,7 +37,7 @@ module uaddrPla
     logic                   illMisc;
     logic [UADDR_WIDTH-1:0] a1Misc;
    
-    assign palIll = (| (arIll & lineBmap));
+    assign plaIll = (| (arIll & lineBmap));
    
     // Only line 0 has 3 subs
     assign plaA1 = arA1[ line];

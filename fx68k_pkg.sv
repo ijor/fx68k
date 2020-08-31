@@ -83,6 +83,22 @@ typedef struct packed
 {
     logic       isRmc;         // r
 
+    logic       updTpend;      // r
+    logic       clrTpend;      // r
+    logic       tvn2Ftu;       // r
+    logic       const2Ftu;     // r
+    logic       ftu2Dbl;       // r
+    logic       ftu2Abl;       // r
+    logic       abl2Pren;      // r
+    logic       updPren;       // r
+    logic       inl2psw;       // r
+    logic       ftu2Sr;        // r
+    logic       sr2Ftu;        // r
+    logic       pswIToFtu;     // r
+    logic       ird2Ftu;       // r
+    logic       ssw2Ftu;       // r
+    logic       initST;        // r
+    
     logic       auClkEn;       // r
     logic       noSpAlign;     // r
     logic [2:0] auCntrl;       // r
@@ -129,6 +145,11 @@ typedef struct packed
 
     logic       alu2Dbd;       // r
     logic       alu2Abd;       // r
+    logic       dbin2Dbd;      // r
+    logic       dbin2Abd;      // r
+    logic       au2Db;         // r
+    logic       au2Ab;         // r
+    
     logic       extDbh;        // r
     logic       extAbh;        // r
     logic       ablAbd;        // r
@@ -146,22 +167,7 @@ typedef struct packed
     logic       noLowByte;     // w
     logic       noHighByte;    // w
 
-    logic       updTpend;      // w
-    logic       clrTpend;      // w
-    logic       tvn2Ftu;       // w
-    logic       const2Ftu;     // w
-    logic       ftu2Dbl;       // w
-    logic       ftu2Abl;       // w
-    logic       abl2Pren;      // w
-    logic       updPren;       // w
-    logic       inl2psw;       // w
-    logic       ftu2Sr;        // w
-    logic       sr2Ftu;        // w
     logic       ftu2Ccr;       // w
-    logic       pswIToFtu;     // w
-    logic       ird2Ftu;       // w
-    logic       ssw2Ftu;       // w
-    logic       initST;        // w
     logic       Ir2Ird;        // w
 
     logic       db2Aob;        // w
@@ -195,8 +201,8 @@ typedef struct packed
     logic       au2Db;         // w
     logic       au2Ab;         // w
     logic       au2Pc;         // w
-    logic       dbin2Abd;      // w
-    logic       dbin2Dbd;      // w
+    //logic       dbin2Abd;      // w
+    //logic       dbin2Dbd;      // w
     logic       abdIsByte;     // w
 } s_nanod_w;
 
