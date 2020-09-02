@@ -9,14 +9,77 @@
 
 `timescale 1 ns / 1 ns
 
-// Define this to run a self contained compilation test build
-// `define FX68K_TEST
+//`define _FX68K_FPGA_STRATIX_
+//`define _FX68K_FPGA_STRATIX_II_
+//`define _FX68K_FPGA_STRATIX_III_
+//`define _FX68K_FPGA_CYCLONE_
+//`define _FX68K_FPGA_CYCLONE_II_
+//`define _FX68K_FPGA_CYCLONE_III_
+//`define _FX68K_FPGA_CYCLONE_IV_
+//`define _FX68K_FPGA_CYCLONE_V_
 
 `ifdef _VLINT_
-`include "fx68k_pkg.sv"
-`include "uaddrPla.sv"
-`include "fx68kAlu.sv"
+
+    `include "fx68k_pkg.sv"
+    `include "uaddrPla.sv"
+    `include "fx68kAlu.sv"
+    `include "bram/fx68kRom_generic.sv"
+    `include "bram/fx68kRegs_generic.sv"
+    
+`else /* _VLINT_ */
+
+    `ifdef _FX68K_FPGA_STRATIX_
+    `define _FX68K_FPGA_VENDOR_ALTERA_
+    `define _FX68K_FPGA_DEVICE_ "Stratix"
+    `define _FX68K_BRAM_TYPE_   "M4K"
+    `endif /* _FX68K_FPGA_STRATIX_ */
+    
+    `ifdef _FX68K_FPGA_STRATIX_II_
+    `define _FX68K_FPGA_VENDOR_ALTERA_
+    `define _FX68K_FPGA_DEVICE_ "Stratix II"
+    `define _FX68K_BRAM_TYPE_   "M4K"
+    `endif /* _FX68K_FPGA_STRATIX_II_ */
+    
+    `ifdef _FX68K_FPGA_STRATIX_III_
+    `define _FX68K_FPGA_VENDOR_ALTERA_
+    `define _FX68K_FPGA_DEVICE_ "Stratix III"
+    `define _FX68K_BRAM_TYPE_   "M9K"
+    `endif /* _FX68K_FPGA_STRATIX_III_ */
+    
+    `ifdef _FX68K_FPGA_CYCLONE_
+    `define _FX68K_FPGA_VENDOR_ALTERA_
+    `define _FX68K_FPGA_DEVICE_ "Cyclone"
+    `define _FX68K_BRAM_TYPE_   "M4K"
+    `endif /* _FX68K_FPGA_CYCLONE_ */
+    
+    `ifdef _FX68K_FPGA_CYCLONE_II_
+    `define _FX68K_FPGA_VENDOR_ALTERA_
+    `define _FX68K_FPGA_DEVICE_ "Cyclone II"
+    `define _FX68K_BRAM_TYPE_   "M4K"
+    `endif /* _FX68K_FPGA_CYCLONE_II_ */
+    
+    `ifdef _FX68K_FPGA_CYCLONE_III_
+    `define _FX68K_FPGA_VENDOR_ALTERA_
+    `define _FX68K_FPGA_DEVICE_ "Cyclone III"
+    `define _FX68K_BRAM_TYPE_   "M9K"
+    `endif /* _FX68K_FPGA_CYCLONE_III_ */
+    
+    `ifdef _FX68K_FPGA_CYCLONE_IV_
+    `define _FX68K_FPGA_VENDOR_ALTERA_
+    `define _FX68K_FPGA_DEVICE_ "Cyclone IV"
+    `define _FX68K_BRAM_TYPE_   "M9K"
+    `endif /* _FX68K_FPGA_CYCLONE_IV_ */
+    
+    `ifdef _FX68K_FPGA_CYCLONE_V_
+    `define _FX68K_FPGA_VENDOR_ALTERA_
+    `define _FX68K_FPGA_DEVICE_ "Cyclone V"
+    `define _FX68K_BRAM_TYPE_   "M10K"
+    `endif /* _FX68K_FPGA_CYCLONE_V_ */
+
 `endif /* _VLINT_ */
+
+// Define this to run a self contained compilation test build
+// `define FX68K_TEST
 
 import fx68k_pkg::*;
 
@@ -192,39 +255,19 @@ module fx68k
     end
 
     // Instantiate micro and nano rom
-    reg  [NANO_WIDTH-1:0] rNanoLatch_t3;
-    wire [NANO_WIDTH-1:0] wNanoOutput;
-    reg  [UROM_WIDTH-1:0] rMicroLatch_t3;
-    wire [UROM_WIDTH-1:0] wMicroOutput;
+    wire  [NANO_WIDTH-1:0] wNanoLatch_t3;
+    wire  [UROM_WIDTH-1:0] wMicroLatch_t3;
 
     reg  [UADDR_WIDTH-1:0] rMicroAddr_t1;
     wire [UADDR_WIDTH-1:0] wMicroAddr;
     reg  [NADDR_WIDTH-1:0] rNanoAddr_t1;
     wire [NADDR_WIDTH-1:0] wNanoAddr;
     
-    // Reset micro/nano latch after T4 of the current ublock.
-    wire                   wRstUrom = Clks.enPhi1 & enErrClk;
-
     // For the time being, address translation is done for nanorom only.
     microToNanoAddr microToNanoAddr
     (
         .uAddr   (wMicroAddr),
         .orgAddr (wNanoAddr)
-    );
-
-    // Output of these modules will be updated at T2 at the latest (depending on clock division)
-    nanoRom U_nanoRom
-    (
-        .clk         (clk),
-        .nanoAddr    (rNanoAddr_t1),
-        .nanoOutput  (wNanoOutput)
-    );
-    
-    uRom U_microRom
-    (
-        .clk         (clk),
-        .microAddr   (rMicroAddr_t1),
-        .microOutput (wMicroOutput)
     );
 
     always_ff @(posedge clk) begin : ROM_ADDR_T1
@@ -242,26 +285,53 @@ module fx68k
         end
     end
 
-    always_ff @(posedge clk) begin : ROM_DATA_T3
-    
-        if (Clks.extReset) begin
-            rMicroLatch_t3 <= {UROM_WIDTH{1'b0}};
-            rNanoLatch_t3  <= {NANO_WIDTH{1'b0}};
-        end
-        else if (wRstUrom) begin
-            // Originally reset these bits only. Not strictly needed like this.
-            // Can reset the whole register if it is important.
-            rMicroLatch_t3[16] <= 1'b0;
-            rMicroLatch_t3[15] <= 1'b0;
-            rMicroLatch_t3[0]  <= 1'b0;
-            rNanoLatch_t3      <= {NANO_WIDTH{1'b0}};
-        end
-        else if (enT3) begin
-            rMicroLatch_t3 <= wMicroOutput;
-            rNanoLatch_t3  <= wNanoOutput;
-        end
-    end
+    // Reset micro/nano latch after T4 of the current ublock.
+    wire wRstUrom = Clks.extReset | Clks.enPhi1 & enErrClk;
 
+    // Output of these modules will be updated at T3
+    fx68kRom
+    #(
+       .OUTPUT_REG  (1),
+       .ADDR_WIDTH  (NADDR_WIDTH),
+       .DATA_WIDTH  (NANO_WIDTH),
+`ifdef _FX68K_FPGA_VENDOR_ALTERA_
+       .INIT_FILE   ("nanorom.mif"),
+       .FPGA_DEVICE (`_FX68K_FPGA_DEVICE_),
+       .BRAM_TYPE   (`_FX68K_BRAM_TYPE_)
+`else
+       .INIT_FILE   ("nanorom.mem")
+`endif
+    )
+    U_nanoRom_t3
+    (
+        .rst        (wRstUrom),
+        .clk        (clk),
+        .clk_ena    (enT3), // ROM output available at T3
+        .addr       (rNanoAddr_t1),
+        .q          (wNanoLatch_t3)
+    );
+    
+    fx68kRom
+    #(
+       .OUTPUT_REG  (1),
+       .ADDR_WIDTH  (UADDR_WIDTH),
+       .DATA_WIDTH  (UROM_WIDTH),
+`ifdef _FX68K_FPGA_VENDOR_ALTERA_
+       .INIT_FILE   ("microrom.mif"),
+       .FPGA_DEVICE (`_FX68K_FPGA_DEVICE_),
+       .BRAM_TYPE   (`_FX68K_BRAM_TYPE_)
+`else
+       .INIT_FILE   ("microrom.mem")
+`endif
+    )
+    U_microRom_t3
+    (
+        .rst        (wRstUrom),
+        .clk        (clk),
+        .clk_ena    (enT3), // ROM output available at T3
+        .addr       (rMicroAddr_t1),
+        .q          (wMicroLatch_t3)
+    );
 
     // Decoded nanocode signals
     s_nanod_r wNanoDec_t4;
@@ -307,7 +377,7 @@ module fx68k
                 rIrd_t1   <= rIr_t1;
                 rIrdL_t1  <= rIrL_t1;
             end
-            else if (rMicroLatch_t3[0]) begin
+            else if (wMicroLatch_t3[0]) begin
                 // prevented by IR => IRD !
                 rIr_t1    <= wIrc_t4;
                 // Instruction groups pre-decoding
@@ -367,7 +437,7 @@ module fx68k
         .clk,
         .Clks,
         .enT3,
-        .iMicroLatch_t3 (rMicroLatch_t3),
+        .iMicroLatch_t3 (wMicroLatch_t3),
         .Ird        (rIrd_t1),
         .A0Err, .excRst, .BerrA, .busAddrErr, .Spuria, .Avia,
         .Tpend, .intPend,
@@ -406,7 +476,7 @@ module fx68k
         .clk,
         .enT2,
         .enT4,
-        .iNanoLatch_t3 (rNanoLatch_t3),
+        .iNanoLatch_t3 (wNanoLatch_t3),
         .iIrdDecode_t1 (wIrdDecode_t1),
         .oNanoDec_t4   (wNanoDec_t4),
         .oNanoDec_t3   (wNanoDec_t3)
@@ -429,7 +499,7 @@ module fx68k
 
 
     // Output reset & halt control
-    wire [1:0] uFc = rMicroLatch_t3[16:15];
+    wire [1:0] uFc = wMicroLatch_t3[16:15];
     logic oReset, oHalted;
     assign oRESETn = !oReset;
     assign oHALTEDn = !oHalted;
@@ -460,8 +530,8 @@ module fx68k
             rFC[2] <= pswS;
             // If FC is type 'n' (0) at ucode, access type depends on PC relative mode
             // We don't care about RZ in this case. Those uinstructions with RZ don't start a bus cycle.
-            rFC[1] <= rMicroLatch_t3[ 16] | ( ~rMicroLatch_t3[ 15] &  wIrdDecode_t1.isPcRel);
-            rFC[0] <= rMicroLatch_t3[ 15] | ( ~rMicroLatch_t3[ 16] & ~wIrdDecode_t1.isPcRel);
+            rFC[1] <= wMicroLatch_t3[ 16] | ( ~wMicroLatch_t3[ 15] &  wIrdDecode_t1.isPcRel);
+            rFC[0] <= wMicroLatch_t3[ 15] | ( ~wMicroLatch_t3[ 16] & ~wIrdDecode_t1.isPcRel);
         end
     end
 
@@ -508,7 +578,7 @@ module fx68k
             updIll <= 1'b0;
         end
         else if (enT4)
-            updIll <= rMicroLatch_t3[0];        // Update on any IRC->IR
+            updIll <= wMicroLatch_t3[0];        // Update on any IRC->IR
         else if (enT1 & updIll)
             inl <= iIpl;                    // Timing is correct.
 
@@ -812,7 +882,7 @@ localparam [3:0]
             oNanoDec_t4.tvn2Ftu   <= (ftuCtrl == NANO_FTU_TVN)      ? 1'b1 : 1'b0;
             oNanoDec_t4.const2Ftu <= (ftuCtrl == NANO_FTU_CONST)    ? 1'b1 : 1'b0;
             oNanoDec_t4.ftu2Dbl   <= (ftuCtrl == NANO_FTU_DBL)
-                              || (ftuCtrl == NANO_FTU_INL)      ? 1'b1 : 1'b0;
+                                  || (ftuCtrl == NANO_FTU_INL)      ? 1'b1 : 1'b0;
             oNanoDec_t4.ftu2Abl   <= (ftuCtrl == NANO_FTU_2ABL)     ? 1'b1 : 1'b0;
             oNanoDec_t4.abl2Pren  <= (ftuCtrl == NANO_FTU_ABL2PREN) ? 1'b1 : 1'b0;
             oNanoDec_t4.updPren   <= (ftuCtrl == NANO_FTU_RSTPREN)  ? 1'b1 : 1'b0;
@@ -823,8 +893,8 @@ localparam [3:0]
             oNanoDec_t4.ird2Ftu   <= (ftuCtrl == NANO_FTU_IRD)      ? 1'b1 : 1'b0; // Used on bus/addr error
             oNanoDec_t4.ssw2Ftu   <= (ftuCtrl == NANO_FTU_SSW)      ? 1'b1 : 1'b0;
             oNanoDec_t4.initST    <= (ftuCtrl == NANO_FTU_INL)
-                              || (ftuCtrl == NANO_FTU_CLRTPEND)
-                              || (ftuCtrl == NANO_FTU_INIT_ST)  ? 1'b1 : 1'b0;
+                                  || (ftuCtrl == NANO_FTU_CLRTPEND)
+                                  || (ftuCtrl == NANO_FTU_INIT_ST)  ? 1'b1 : 1'b0;
 
             oNanoDec_t4.auClkEn   <= ~iNanoLatch_t3[NANO_AUCLKEN];
             oNanoDec_t4.auCntrl   <=  iNanoLatch_t3[NANO_AUCTRL +: 3];
@@ -945,11 +1015,11 @@ localparam [3:0]
 
     assign oNanoDec_t3.permStart     = (aobCtrl != 2'b00) ? 1'b1 : 1'b0;
     assign oNanoDec_t3.isWrite       = iNanoLatch_t3[NANO_DOBCTRL_1]
-                                 | iNanoLatch_t3[NANO_DOBCTRL_0];
+                                     | iNanoLatch_t3[NANO_DOBCTRL_0];
     assign oNanoDec_t3.waitBusFinish = iNanoLatch_t3[NANO_DOBCTRL_1]
-                                 | iNanoLatch_t3[NANO_DOBCTRL_0]
-                                 | iNanoLatch_t3[NANO_TOIRC]
-                                 | iNanoLatch_t3[NANO_TODBIN];
+                                     | iNanoLatch_t3[NANO_DOBCTRL_0]
+                                     | iNanoLatch_t3[NANO_TOIRC]
+                                     | iNanoLatch_t3[NANO_TODBIN];
     assign oNanoDec_t3.busByte       = iNanoLatch_t3[NANO_BUSBYTE];
 
     assign oNanoDec_t3.noLowByte     = iNanoLatch_t3[NANO_LOWBYTE];
@@ -1238,8 +1308,8 @@ module irdDecode
     // ADDA/SUBA ADDQ/SUBQ MOVEA
 
     assign oIrdDecode_t1.inhibitCcr =
-        ( (iIrdL_t1[4'h9] | iIrdL_t1[4'hD]) & size11) |            // ADDA/SUBA
-        ( iIrdL_t1[4'h5] & eaAdir) |                           // ADDQ/SUBQ to An (originally checks for line[4] as well !?)
+        ( (iIrdL_t1[4'h9] | iIrdL_t1[4'hD]) & size11) |                // ADDA/SUBA
+        ( iIrdL_t1[4'h5] & eaAdir) |                                   // ADDQ/SUBQ to An (originally checks for line[4] as well !?)
         ( (iIrdL_t1[4'h2] | iIrdL_t1[4'h3]) & iIrd_t1[8:6] == 3'b001); // MOVEA
 
 endmodule
@@ -1283,31 +1353,27 @@ localparam
     REG_SSP = 16,
     REG_DT  = 17;
 
-    // Register file
-    reg [15:0] regs68L[0:17];
-    reg [15:0] regs68H[0:17];
-
 `ifdef verilator3
-
-    /*
-        It is bad practice to initialize simulation registers that the hardware doesn't.
-        There is risk that simulation would be different than the real hardware. But in this case is the other way around.
-        Some ROM uses something like sub.l An,An at powerup which clears the register
-        Simulator power ups the registers with 'X, as they are really undetermined at the real hardware.
-        But the simulator doesn't realize (it can't) that the same value is substracting from itself,
-        and that the result should be zero even when it's 'X - 'X.
-    */
-
-    initial begin
-        for( int i = 0; i < 18; i++) begin
-            regs68L[i] = 16'h0000;
-            regs68H[i] = 16'h0000;
-        end
-    end
-
     // For simulation display only
-    wire [31:0] SSP = { regs68H[REG_SSP], regs68L[REG_SSP]};
-
+    wire [31:0] dbg_D0 =  { U_fx68kRegs.ram_L[0],       U_fx68kRegs.ram_W[0],       U_fx68kRegs.ram_B[0]       };
+    wire [31:0] dbg_D1 =  { U_fx68kRegs.ram_L[1],       U_fx68kRegs.ram_W[1],       U_fx68kRegs.ram_B[1]       };
+    wire [31:0] dbg_D2 =  { U_fx68kRegs.ram_L[2],       U_fx68kRegs.ram_W[2],       U_fx68kRegs.ram_B[2]       };
+    wire [31:0] dbg_D3 =  { U_fx68kRegs.ram_L[3],       U_fx68kRegs.ram_W[3],       U_fx68kRegs.ram_B[3]       };
+    wire [31:0] dbg_D4 =  { U_fx68kRegs.ram_L[4],       U_fx68kRegs.ram_W[4],       U_fx68kRegs.ram_B[4]       };
+    wire [31:0] dbg_D5 =  { U_fx68kRegs.ram_L[5],       U_fx68kRegs.ram_W[5],       U_fx68kRegs.ram_B[5]       };
+    wire [31:0] dbg_D6 =  { U_fx68kRegs.ram_L[6],       U_fx68kRegs.ram_W[6],       U_fx68kRegs.ram_B[6]       };
+    wire [31:0] dbg_D7 =  { U_fx68kRegs.ram_L[7],       U_fx68kRegs.ram_W[7],       U_fx68kRegs.ram_B[7]       };
+    wire [31:0] dbg_A0 =  { U_fx68kRegs.ram_L[8],       U_fx68kRegs.ram_W[8],       U_fx68kRegs.ram_B[8]       };
+    wire [31:0] dbg_A1 =  { U_fx68kRegs.ram_L[9],       U_fx68kRegs.ram_W[9],       U_fx68kRegs.ram_B[9]       };
+    wire [31:0] dbg_A2 =  { U_fx68kRegs.ram_L[10],      U_fx68kRegs.ram_W[10],      U_fx68kRegs.ram_B[10]      };
+    wire [31:0] dbg_A3 =  { U_fx68kRegs.ram_L[11],      U_fx68kRegs.ram_W[11],      U_fx68kRegs.ram_B[11]      };
+    wire [31:0] dbg_A4 =  { U_fx68kRegs.ram_L[12],      U_fx68kRegs.ram_W[12],      U_fx68kRegs.ram_B[12]      };
+    wire [31:0] dbg_A5 =  { U_fx68kRegs.ram_L[13],      U_fx68kRegs.ram_W[13],      U_fx68kRegs.ram_B[13]      };
+    wire [31:0] dbg_A6 =  { U_fx68kRegs.ram_L[14],      U_fx68kRegs.ram_W[14],      U_fx68kRegs.ram_B[14]      };
+    wire [31:0] dbg_USP = { U_fx68kRegs.ram_L[REG_USP], U_fx68kRegs.ram_W[REG_USP], U_fx68kRegs.ram_B[REG_USP] };
+    wire [31:0] dbg_SSP = { U_fx68kRegs.ram_L[REG_SSP], U_fx68kRegs.ram_W[REG_SSP], U_fx68kRegs.ram_B[REG_SSP] };
+    wire [31:0] dbg_DT  = { U_fx68kRegs.ram_L[REG_DT],  U_fx68kRegs.ram_W[REG_DT],  U_fx68kRegs.ram_B[REG_DT]  };
+    wire [31:0] dbg_PC =  { PcH, PcL };
 `endif
 
 
@@ -1700,23 +1766,30 @@ localparam
         end
     end
     
-    
-    fx68kRegs U_fx68kRegs
+    // Registers file
+    fx68kRegs
+`ifdef _FX68K_FPGA_VENDOR_ALTERA_
+    #(
+       .FPGA_DEVICE (`_FX68K_FPGA_DEVICE_),
+       .BRAM_TYPE   (`_FX68K_BRAM_TYPE_)
+    )
+`endif
+    U_fx68kRegs
     (
         .clk        (clk),
         .clk_ena    (enT3 | enT4),
         
-        .iRxAddr    (wRxMux_t3),
-        .iRxWrEna   (enT3),
-        .iRxByteEna (rRxWEna_t2),
-        .iRxWrData  ({ wRxh_t2[15:0], wRxl_t2[15:0] }),
-        .oRxRdData  (wRx_t4),
+        .address_a  (wRxMux_t3),
+        .wren_a     (enT3),
+        .byteena_a  (rRxWEna_t2),
+        .data_a     ({ wRxh_t2[15:0], wRxl_t2[15:0] }),
+        .q_a        (wRx_t4),
         
-        .iRyAddr    (wRyMux_t3),
-        .iRyWrEna   (enT3),
-        .iRyByteEna (rRyWEna_t2),
-        .iRyWrData  ({ wRyh_t2[15:0], wRyl_t2[15:0] }),
-        .oRyRdData  (wRy_t4)
+        .address_b  (wRyMux_t3),
+        .wren_b     (enT3),
+        .byteena_b  (rRyWEna_t2),
+        .data_b     ({ wRyh_t2[15:0], wRyl_t2[15:0] }),
+        .q_b        (wRy_t4)
     );
 
     // PC & AT
@@ -1902,138 +1975,6 @@ localparam
 
 endmodule
 
-module fx68kRegs
-(
-    input         clk,
-    input         clk_ena,
-    
-    input   [4:0] iRxAddr,
-    input         iRxWrEna,
-    input   [3:0] iRxByteEna,
-    input  [31:0] iRxWrData,
-    output [31:0] oRxRdData,
-    
-    input   [4:0] iRyAddr,
-    input         iRyWrEna,
-    input   [3:0] iRyByteEna,
-    input  [31:0] iRyWrData,
-    output [31:0] oRyRdData
-);
-
-`ifdef verilator3
-
-    // Inferred block RAM
-    reg [31:0] rRam [0:31];
-    
-    always_ff @(posedge clk) begin : RX_WRITE
-    
-        if (clk_ena & iRxWrEna) begin
-            if (iRxByteEna[3]) rRam[iRxAddr][31:24] <= iRxWrData[31:24];
-            if (iRxByteEna[2]) rRam[iRxAddr][23:16] <= iRxWrData[23:16];
-            if (iRxByteEna[1]) rRam[iRxAddr][15: 8] <= iRxWrData[15: 8];
-            if (iRxByteEna[0]) rRam[iRxAddr][ 7: 0] <= iRxWrData[ 7: 0];
-        end
-    end
-    
-    reg [31:0] rRxRdData;
-    
-    always_ff @(posedge clk) begin : RX_READ
-    
-        if (clk_ena) begin
-            rRxRdData <= rRam[iRxAddr];
-        end
-    end
-    
-    assign oRxRdData = rRxRdData;
-
-    always_ff @(posedge clk) begin : RY_WRITE
-    
-        if (clk_ena & iRyWrEna) begin
-            if (iRyByteEna[3]) rRam[iRyAddr][31:24] <= iRyWrData[31:24];
-            if (iRyByteEna[2]) rRam[iRyAddr][23:16] <= iRyWrData[23:16];
-            if (iRyByteEna[1]) rRam[iRyAddr][15: 8] <= iRyWrData[15: 8];
-            if (iRyByteEna[0]) rRam[iRyAddr][ 7: 0] <= iRyWrData[ 7: 0];
-        end
-    end
-
-    reg [31:0] rRyRdData;
-    
-    always_ff @(posedge clk) begin : RY_READ
-    
-        if (clk_ena) begin
-            rRyRdData <= rRam[iRyAddr];
-        end
-    end
-    
-    assign oRyRdData = rRyRdData;
-
-`else
-
-    altsyncram U_altsyncram
-    (
-        // Clock & reset
-        .aclr0          (1'b0),
-        .aclr1          (1'b0),
-        .clock0         (clk),
-        .clock1         (1'b1),
-        .clocken0       (clk_ena),
-        .clocken1       (1'b1),
-        .clocken2       (1'b1),
-        .clocken3       (1'b1),
-        // Rx port
-        .rden_a         (1'b1),
-        .wren_a         (iRxWrEna),
-        .byteena_a      (iRxByteEna),
-        .address_a      (iRxAddr),
-        .addressstall_a (1'b0),
-        .data_a         (iRxWrData),
-        .q_a            (oRxRdData),
-        // Ry port
-        .rden_b         (1'b1),
-        .wren_b         (iRyWrEna),
-        .byteena_b      (iRyByteEna),
-        .address_b      (iRyAddr),
-        .addressstall_b (1'b0),
-        .data_b         (iRyWrData),
-        .q_b            (oRyRdData),
-        .eccstatus      ()
-    );
-	defparam
-        U_altsyncram.address_aclr_a            = "NONE",
-        U_altsyncram.address_aclr_b            = "NONE",
-        U_altsyncram.address_reg_b             = "CLOCK0",
-        U_altsyncram.byteena_aclr_a            = "NONE",
-        U_altsyncram.byteena_aclr_b            = "NONE",
-        U_altsyncram.byteena_reg_b             = "CLOCK0",
-        U_altsyncram.byte_size                 = 8,
-        U_altsyncram.indata_aclr_a             = "NONE",
-        U_altsyncram.indata_aclr_b             = "NONE",
-        U_altsyncram.indata_reg_b              = "CLOCK0",
-        U_altsyncram.intended_device_family    = "Stratix",
-        U_altsyncram.lpm_type                  = "altsyncram",
-        U_altsyncram.numwords_a                = 32,
-        U_altsyncram.numwords_b                = 32,
-        U_altsyncram.operation_mode            = "BIDIR_DUAL_PORT",
-        U_altsyncram.outdata_aclr_a            = "NONE",
-        U_altsyncram.outdata_aclr_b            = "NONE",
-        U_altsyncram.outdata_reg_a             = "UNREGISTERED",
-        U_altsyncram.outdata_reg_b             = "UNREGISTERED",
-        U_altsyncram.power_up_uninitialized    = "FALSE",
-        U_altsyncram.ram_block_type            = "M4K",
-        U_altsyncram.read_during_write_mode_mixed_ports = "DONT_CARE",
-        U_altsyncram.widthad_a                 = 5,
-        U_altsyncram.widthad_b                 = 5,
-        U_altsyncram.width_a                   = 32,
-        U_altsyncram.width_b                   = 32,
-        U_altsyncram.width_byteena_a           = 4,
-        U_altsyncram.width_byteena_b           = 4,
-        U_altsyncram.wrcontrol_aclr_a          = "NONE",
-        U_altsyncram.wrcontrol_aclr_b          = "NONE",
-        U_altsyncram.wrcontrol_wraddress_reg_b = "CLOCK0";
-        
-`endif
-
-endmodule
 
 //
 // Data bus I/O
@@ -2846,146 +2787,6 @@ module busControl
 
 endmodule
 
-//
-// microrom and nanorom instantiation
-//
-// There is bit of wasting of resources here. An extra registering pipeline happens that is not needed.
-// This is just for the purpose of helping inferring block RAM using pure generic code. Inferring RAM is important for performance.
-// Might be more efficient to use vendor specific features such as clock enable.
-//
-
-module uRom
-(
-    input                          clk,
-    input        [UADDR_WIDTH-1:0] microAddr,
-    output logic  [UROM_WIDTH-1:0] microOutput
-);
-
-`ifdef verilator3
-
-    reg [UROM_WIDTH-1:0] uRam[0:UROM_DEPTH-1];
-
-    initial begin
-        $readmemb("microrom.mem", uRam);
-    end
-
-    always_ff @(posedge clk) begin
-        microOutput <= uRam[microAddr];
-    end
-
-`else
-
-    altsyncram U_altsyncram
-    (
-        .clock0         (clk),
-        .address_a      (microAddr),
-        .q_a            (microOutput),
-        .aclr0          (1'b0),
-        .aclr1          (1'b0),
-        .address_b      (1'b1),
-        .addressstall_a (1'b0),
-        .addressstall_b (1'b0),
-        .byteena_a      (1'b1),
-        .byteena_b      (1'b1),
-        .clock1         (1'b1),
-        .clocken0       (1'b1),
-        .clocken1       (1'b1),
-        .clocken2       (1'b1),
-        .clocken3       (1'b1),
-        .data_a         ({UROM_WIDTH{1'b1}}),
-        .data_b         (1'b1),
-        .eccstatus      (),
-        .q_b            (),
-        .rden_a         (1'b1),
-        .rden_b         (1'b1),
-        .wren_a         (1'b0),
-        .wren_b         (1'b0)
-    );
-    defparam
-        U_altsyncram.address_aclr_a         = "NONE",
-        //U_altsyncram.clock_enable_input_a   = "BYPASS",
-        //U_altsyncram.clock_enable_output_a  = "BYPASS",
-        U_altsyncram.init_file              = "microrom.mif",
-        U_altsyncram.intended_device_family = "Stratix",
-        U_altsyncram.lpm_type               = "altsyncram",
-        U_altsyncram.numwords_a             = (1 << UADDR_WIDTH),
-        U_altsyncram.operation_mode         = "ROM",
-        U_altsyncram.outdata_aclr_a         = "NONE",
-        U_altsyncram.outdata_reg_a          = "UNREGISTERED",
-        U_altsyncram.widthad_a              = UADDR_WIDTH,
-        U_altsyncram.width_a                = UROM_WIDTH,
-        U_altsyncram.width_byteena_a        = 1;
-        
-`endif
-
-endmodule
-
-
-module nanoRom
-(
-    input                         clk,
-    input       [NADDR_WIDTH-1:0] nanoAddr,
-    output logic [NANO_WIDTH-1:0] nanoOutput
-);
-
-`ifdef verilator3
-
-    reg [NANO_WIDTH-1:0] nRam[0:NANO_DEPTH-1];
-
-    initial begin
-        $readmemb("nanorom.mem", nRam);
-    end
-
-    always_ff @(posedge clk) begin
-        nanoOutput <= nRam[nanoAddr];
-    end
-
-`else
-
-    altsyncram U_altsyncram
-    (
-        .clock0         (clk),
-        .address_a      (nanoAddr),
-        .q_a            (nanoOutput),
-        .aclr0          (1'b0),
-        .aclr1          (1'b0),
-        .address_b      (1'b1),
-        .addressstall_a (1'b0),
-        .addressstall_b (1'b0),
-        .byteena_a      (1'b1),
-        .byteena_b      (1'b1),
-        .clock1         (1'b1),
-        .clocken0       (1'b1),
-        .clocken1       (1'b1),
-        .clocken2       (1'b1),
-        .clocken3       (1'b1),
-        .data_a         ({NANO_WIDTH{1'b1}}),
-        .data_b         (1'b1),
-        .eccstatus      (),
-        .q_b            (),
-        .rden_a         (1'b1),
-        .rden_b         (1'b1),
-        .wren_a         (1'b0),
-        .wren_b         (1'b0)
-    );
-    defparam
-        U_altsyncram.address_aclr_a         = "NONE",
-        //U_altsyncram.clock_enable_input_a   = "BYPASS",
-        //U_altsyncram.clock_enable_output_a  = "BYPASS",
-        U_altsyncram.init_file              = "nanorom.mif",
-        U_altsyncram.intended_device_family = "Stratix",
-        U_altsyncram.lpm_type               = "altsyncram",
-        U_altsyncram.numwords_a             = (1 << NADDR_WIDTH),
-        U_altsyncram.operation_mode         = "ROM",
-        U_altsyncram.outdata_aclr_a         = "NONE",
-        U_altsyncram.outdata_reg_a          = "UNREGISTERED",
-        U_altsyncram.widthad_a              = NADDR_WIDTH,
-        U_altsyncram.width_a                = NANO_WIDTH,
-        U_altsyncram.width_byteena_a        = 1;
-        
-`endif
-
-endmodule
 
 // Translate uaddr to nanoaddr
 module microToNanoAddr(
