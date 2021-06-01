@@ -16,6 +16,12 @@
 	Most systems don't need this. Note that these signals are not registered. 
  */
 
+//`define FX68K_ALTERA_REGS
+/*
+	Define FX68K_ALTERA_REGS to instantiate 2 BRAM blocks for the register file. Frees up ~2000 Logic Cells on Cyclone III.
+	Note: It's Altera specific, as it requires byte enables.
+*/
+
 // Define this to run a self contained compilation test build
 // `define FX68K_TEST
 
@@ -1171,8 +1177,61 @@ localparam REG_SSP = 16;
 localparam REG_DT = 17;
 
 	// Register file
+	reg [15:0] regs68L_x;
+	reg [15:0] regs68L_y;
+	reg [15:0] regs68H_x;
+	reg [15:0] regs68H_y;
+
+`ifdef FX68K_ALTERA_REGS
+	reg [15:0] regs68L_dx;
+	reg [15:0] regs68L_dy;
+	reg        regs68L_we_x, regs68L_we_y;
+	reg        regs68L_byte;
+
+	altera_regs regs68L (
+		.clock(!Clks.clk),
+		.address_a(actualRx),
+		.byteena_a({!regs68L_byte, 1'b1}),
+		.wren_a(regs68L_we_x),
+		.data_a(regs68L_dx),
+		.q_a(regs68L_x),
+		.address_b(actualRy),
+		.byteena_b({!regs68L_byte, 1'b1}),
+		.wren_b(regs68L_we_y),
+		.data_b(regs68L_dy),
+		.q_b(regs68L_y)
+	);
+
+	reg [15:0] regs68H_dx;
+	reg [15:0] regs68H_dy;
+	reg        regs68H_we_x, regs68H_we_y;
+
+	altera_regs regs68H (
+		.clock(!Clks.clk),
+		.address_a(actualRx),
+		.byteena_a(2'b11),
+		.wren_a(regs68H_we_x),
+		.data_a(regs68H_dx),
+		.q_a(regs68H_x),
+		.address_b(actualRy),
+		.byteena_b(2'b11),
+		.wren_b(regs68H_we_y),
+		.data_b(regs68H_dy),
+		.q_b(regs68H_y)
+	);
+
+`else
+
 	reg [15:0] regs68L[ 18];
 	reg [15:0] regs68H[ 18];
+
+	always_comb begin
+		regs68L_x = regs68L[actualRx];
+		regs68L_y = regs68L[actualRy];
+		regs68H_x = regs68H[actualRx];
+		regs68H_y = regs68H[actualRy];
+	end
+`endif // FX68K_ALTERA_REGS
 
 // synthesis translate off
 	/*
@@ -1331,8 +1390,8 @@ localparam REG_DT = 17;
 		{dbhIdle, dblIdle, dbdIdle} = '0;
 
 		unique case( 1'b1)
-		ryl2Dbd:				dbdMux = regs68L[ actualRy];
-		rxl2Dbd:				dbdMux = regs68L[ actualRx];
+		ryl2Dbd:				dbdMux = regs68L_y;
+		rxl2Dbd:				dbdMux = regs68L_x;
 		Nanod.alue2Dbd:			dbdMux = alue;
 		Nanod.dbin2Dbd:			dbdMux = dbin;
 		Nanod.alu2Dbd:			dbdMux = aluOut;
@@ -1341,8 +1400,8 @@ localparam REG_DT = 17;
 		endcase
 	
 		unique case( 1'b1)
-		rxl2Dbl:				dblMux = regs68L[ actualRx];
-		ryl2Dbl:				dblMux = regs68L[ actualRy];
+		rxl2Dbl:				dblMux = regs68L_x;
+		ryl2Dbl:				dblMux = regs68L_y;
 		Nanod.ftu2Dbl:			dblMux = ftu;
 		Nanod.au2Db:			dblMux = auReg[15:0];
 		Nanod.atl2Dbl:			dblMux = Atl;
@@ -1351,8 +1410,8 @@ localparam REG_DT = 17;
 		endcase
 			
 		unique case( 1'b1)
-		Nanod.rxh2dbh:			dbhMux = regs68H[ actualRx];
-		Nanod.ryh2dbh:			dbhMux = regs68H[ actualRy];
+		Nanod.rxh2dbh:			dbhMux = regs68H_x;
+		Nanod.ryh2dbh:			dbhMux = regs68H_y;
 		Nanod.au2Db:			dbhMux = auReg[31:16];
 		Nanod.ath2Dbh:			dbhMux = Ath;
 		Pch2Dbh:				dbhMux = PcH;
@@ -1360,8 +1419,8 @@ localparam REG_DT = 17;
 		endcase
 
 		unique case( 1'b1)
-		ryl2Abd:				abdMux = regs68L[ actualRy];
-		rxl2Abd:				abdMux = regs68L[ actualRx];
+		ryl2Abd:				abdMux = regs68L_y;
+		rxl2Abd:				abdMux = regs68L_x;
 		Nanod.dbin2Abd:			abdMux = dbin;
 		Nanod.alu2Abd:			abdMux = aluOut;
 		default: begin			abdMux = 'X;	abdIdle = 1'b1;				end
@@ -1369,8 +1428,8 @@ localparam REG_DT = 17;
 
 		unique case( 1'b1)
 		Pcl2Abl:				ablMux = PcL;
-		rxl2Abl:				ablMux = regs68L[ actualRx];
-		ryl2Abl:				ablMux = regs68L[ actualRy];
+		rxl2Abl:				ablMux = regs68L_x;
+		ryl2Abl:				ablMux = regs68L_y;
 		Nanod.ftu2Abl:			ablMux = ftu;
 		Nanod.au2Ab:			ablMux = auReg[15:0];
 		Nanod.aob2Ab:			ablMux = aob[15:0];
@@ -1380,8 +1439,8 @@ localparam REG_DT = 17;
 			
 		unique case( 1'b1)		
 		Pch2Abh:				abhMux = PcH;
-		Nanod.rxh2abh:			abhMux = regs68H[ actualRx];
-		Nanod.ryh2abh:			abhMux = regs68H[ actualRy];
+		Nanod.rxh2abh:			abhMux = regs68H_x;
+		Nanod.ryh2abh:			abhMux = regs68H_y;
 		Nanod.au2Ab:			abhMux = auReg[31:16];
 		Nanod.aob2Ab:			abhMux = aob[31:16];
 		Nanod.ath2Abh:			abhMux = Ath;
@@ -1519,7 +1578,46 @@ localparam REG_DT = 17;
 	// Main A/D registers
 	
 	always_ff @( posedge Clks.clk) begin
+`ifdef FX68K_ALTERA_REGS
+		regs68L_byte <= 0;
+		{ regs68L_we_x, regs68L_we_y } <= 0;
+		{ regs68H_we_x, regs68H_we_y } <= 0;
+`endif
+
 		if( enT3) begin
+`ifdef FX68K_ALTERA_REGS
+			if( Nanod.dbl2rxl | Nanod.abl2rxl) begin
+				regs68L_we_x <= 1;
+				if( ~rxIsAreg) begin
+					if( Nanod.dbl2rxl)			regs68L_dx <= Dbd;
+					else if( abdIsByte)	begin 	regs68L_dx[7:0] <= Abd[7:0]; regs68L_byte <= 1; end
+					else						regs68L_dx <= Abd;
+				end
+				else
+					regs68L_dx <= Nanod.dbl2rxl ? Dbl : Abl;
+			end
+			if( Nanod.dbl2ryl | Nanod.abl2ryl) begin
+				regs68L_we_y <= 1;
+				if( ~ryIsAreg) begin
+					if( Nanod.dbl2ryl)			regs68L_dy <= Dbd;
+					else if( abdIsByte)	begin 	regs68L_dy[7:0] <= Abd[7:0]; regs68L_byte <= 1; end
+					else						regs68L_dy <= Abd;
+				end
+				else
+					regs68L_dy <= Nanod.dbl2ryl ? Dbl : Abl;
+			end
+			// High registers are easier. Both A & D on the same buses, and not byte ops.
+			if( Nanod.dbh2rxh | Nanod.abh2rxh) begin
+				regs68H_dx <= Nanod.dbh2rxh ? Dbh : Abh;
+				regs68H_we_x <= 1;
+			end
+			if( Nanod.dbh2ryh | Nanod.abh2ryh) begin
+				regs68H_dy <= Nanod.dbh2ryh ? Dbh : Abh;
+				regs68H_we_y <= 1;
+			end
+
+`else
+
 			if( Nanod.dbl2rxl | Nanod.abl2rxl) begin
 				if( ~rxIsAreg) begin
 					if( Nanod.dbl2rxl)			regs68L[ actualRx] <= Dbd;
@@ -1529,7 +1627,7 @@ localparam REG_DT = 17;
 				else
 					regs68L[ actualRx] <= Nanod.dbl2rxl ? Dbl : Abl;
 			end
-				
+
 			if( Nanod.dbl2ryl | Nanod.abl2ryl) begin
 				if( ~ryIsAreg) begin
 					if( Nanod.dbl2ryl)			regs68L[ actualRy] <= Dbd;
@@ -1539,14 +1637,14 @@ localparam REG_DT = 17;
 				else
 					regs68L[ actualRy] <= Nanod.dbl2ryl ? Dbl : Abl;
 			end
-			
+
 			// High registers are easier. Both A & D on the same buses, and not byte ops.
 			if( Nanod.dbh2rxh | Nanod.abh2rxh)
 				regs68H[ actualRx] <= Nanod.dbh2rxh ? Dbh : Abh;
 			if( Nanod.dbh2ryh | Nanod.abh2ryh)
 				regs68H[ actualRy] <= Nanod.dbh2ryh ? Dbh : Abh;
-				
-		end	
+`endif // FX68K_ALTERA_REGS
+		end
 	end
 		
 	// PC & AT
