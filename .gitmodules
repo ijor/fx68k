@@ -1,0 +1,3 @@
+[submodule "tb/sst_m68k"]
+	path = tb/sst_m68k
+	url = https://github.com/SingleStepTests/m68000

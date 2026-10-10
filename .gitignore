@@ -1,0 +1,4 @@
+*.vcd
+*/obj_dir/*
+tb/flats/*
+sst_flats.tgz
